@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Upload Konten</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <header class="admin-header">
+    <button id="back-btn" class="back-btn">← Kembali</button>
+    <h1>Admin Panel</h1>
+    <span>Upload Konten Baru</span>
+  </header>
+
+  <main class="admin-main">
+    <div class="admin-container">
+      <!-- Form Upload Konten -->
+      <section class="upload-section">
+        <h2>Upload Film Baru</h2>
+        
+        <form id="upload-form" class="upload-form">
+          <!-- Judul Film -->
+          <div class="form-group">
+            <label for="movie-title">Judul Film *</label>
+            <input 
+              type="text" 
+              id="movie-title" 
+              name="title" 
+              required 
+              placeholder="Masukkan judul film"
+            >
+          </div>
+
+          <!-- Deskripsi -->
+          <div class="form-group">
+            <label for="movie-desc">Deskripsi</label>
+            <textarea 
+              id="movie-desc" 
+              name="description" 
+              rows="4" 
+              placeholder="Masukkan deskripsi film"
+            ></textarea>
+          </div>
+
+          <!-- Kategori -->
+          <div class="form-group">
+            <label for="movie-category">Kategori *</label>
+            <select id="movie-category" name="category" required>
+              <option value="">Pilih Kategori</option>
+              <option value="drakor">Drakor</option>
+              <option value="dracin">Dracin</option>
+              <option value="donghua">Donghua</option>
+              <option value="anime">Anime</option>
+              <option value="film">Film</option>
+              <option value="series">Series</option>
+              <option value="lainnya">Lainnya</option>
+            </select>
+          </div>
+
+          <!-- URL Video -->
+          <div class="form-group">
+            <label for="video-url">URL Video *</label>
+            <input 
+              type="url" 
+              id="video-url" 
+              name="video_url" 
+              required 
+              placeholder="https://www.youtube.com/watch?v=... atau https://drive.google.com/..."
+            >
+            <small class="help-text">
+              Support: YouTube, Google Drive, atau URL video langsung
+            </small>
+          </div>
+
+          <!-- Durasi -->
+          <div class="form-group">
+            <label for="movie-duration">Durasi (menit)</label>
+            <input 
+              type="number" 
+              id="movie-duration" 
+              name="duration" 
+              min="1" 
+              placeholder="120"
+            >
+          </div>
+
+          <!-- Upload Thumbnail -->
+          <div class="form-group">
+            <label for="thumbnail-upload">Thumbnail *</label>
+            
+            <!-- Opsi Upload File -->
+            <div class="upload-area" id="thumbnail-upload-area">
+              <input 
+                type="file" 
+                id="thumbnail-upload" 
+                accept="image/*" 
+                hidden
+              >
+              <div class="upload-placeholder">
+                <div class="upload-icon">📷</div>
+                <p>Klik untuk upload thumbnail</p>
+                <small>Format: JPG, PNG, WebP (Maks. 5MB)</small>
+              </div>
+              <div class="upload-preview hidden">
+                <img id="thumbnail-preview" src="" alt="Preview thumbnail">
+                <button type="button" id="change-thumbnail" class="change-btn">Ganti</button>
+              </div>
+            </div>
+
+            <!-- Opsi URL Gambar -->
+            <div class="form-group" style="margin-top: 12px;">
+              <label for="thumbnail-url">Atau Masukkan URL Gambar</label>
+              <input 
+                type="url" 
+                id="thumbnail-url" 
+                name="thumbnail_url" 
+                placeholder="https://example.com/image.jpg"
+              >
+              <small class="help-text">
+                URL gambar thumbnail dari internet
+              </small>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="form-actions">
+            <button type="button" id="reset-btn" class="btn-secondary">Reset</button>
+            <button type="submit" id="submit-btn" class="btn-primary">
+              <span id="submit-text">Upload Film</span>
+              <div id="submit-spinner" class="spinner hidden"></div>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Daftar Film yang Sudah Diupload -->
+      <section class="movies-list-section">
+        <div class="section-header">
+          <h2>Film Terupload</h2>
+          <div class="filter-controls">
+            <select id="category-filter">
+              <option value="">Semua Kategori</option>
+              <option value="drakor">Drakor</option>
+              <option value="dracin">Dracin</option>
+              <option value="donghua">Donghua</option>
+              <option value="anime">Anime</option>
+              <option value="film">Film</option>
+              <option value="series">Series</option>
+              <option value="lainnya">Lainnya</option>
+            </select>
+          </div>
+        </div>
+        <div id="movies-list" class="movies-list">
+          <div class="loading-movies">Memuat daftar film...</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Success Popup -->
+  <div id="success-popup" class="popup-overlay hidden">
+    <div class="popup-box success-popup">
+      <div class="popup-icon">✅</div>
+      <h3>Berhasil!</h3>
+      <p id="success-message">Film berhasil diupload.</p>
+      <div class="popup-actions">
+        <button id="success-ok" class="popup-ok-btn">OK</button>
+        <button id="success-view" class="popup-view-btn">Lihat Film</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Popup -->
+  <div id="error-popup" class="popup-overlay hidden">
+    <div class="popup-box error-popup">
+      <div class="popup-icon">❌</div>
+      <h3>Gagal Upload</h3>
+      <p id="error-message">Terjadi kesalahan saat upload.</p>
+      <div class="popup-actions">
+        <button id="error-ok" class="popup-ok-btn">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-spinner"></div>
+    <p>Mengupload...</p>
+  </div>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>

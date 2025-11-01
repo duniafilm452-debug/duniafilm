@@ -14,11 +14,7 @@ const likeBtn = document.getElementById("like-btn");
 const favBtn = document.getElementById("fav-btn");
 const shareBtn = document.getElementById("share-btn");
 const likeCount = document.getElementById("like-count");
-const commentList = document.getElementById("comment-list");
-const commentInput = document.getElementById("comment-input");
-const commentBtn = document.getElementById("comment-btn");
 const recommendList = document.getElementById("recommend-list");
-const toggleCommentsBtn = document.getElementById("toggle-comments");
 
 // Popup
 const popup = document.getElementById("login-popup");
@@ -30,7 +26,6 @@ const params = new URLSearchParams(window.location.search);
 const movieId = params.get("id");
 let currentUser = null;
 let currentMovie = null;
-let commentsExpanded = false;
 let hasIncrementedViews = false;
 
 // Inisialisasi aplikasi
@@ -68,18 +63,6 @@ function setupEventListeners() {
     
     const backBtn = document.getElementById("back-btn");
     if (backBtn) backBtn.onclick = () => window.location.href = "index.html";
-    
-    // Comments
-    if (commentBtn) commentBtn.onclick = postComment;
-    if (commentInput) {
-        commentInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                postComment();
-            }
-        });
-    }
-    if (toggleCommentsBtn) toggleCommentsBtn.onclick = toggleComments;
     
     // Actions
     if (likeBtn) likeBtn.onclick = handleLike;
@@ -155,7 +138,6 @@ async function loadMovie() {
         if (videoPlayer) videoPlayer.src = videoUrl;
 
         await Promise.all([
-            loadComments(),
             loadRecommendations(),
             checkLikeStatus(),
             checkFavoriteStatus()
@@ -308,171 +290,6 @@ async function recordWatchHistory() {
             });
     } catch (error) {
         console.error('Exception in recordWatchHistory:', error);
-    }
-}
-
-// Load comments
-async function loadComments() {
-    if (!movieId) return;
-    
-    try {
-        if (commentList) commentList.innerHTML = '<div class="loading-comments">Memuat komentar...</div>';
-        
-        // Coba query dengan join terlebih dahulu
-        const { data, error } = await supabase
-            .from("comments")
-            .select(`
-                *,
-                profiles (
-                    username,
-                    avatar_url
-                )
-            `)
-            .eq("movie_id", movieId)
-            .order("created_at", { ascending: false });
-            
-        if (error) {
-            // Fallback ke query tanpa join jika error
-            await loadCommentsFallback();
-            return;
-        }
-        
-        renderComments(data || []);
-        
-    } catch (error) {
-        console.error('Exception in loadComments:', error);
-        await loadCommentsFallback();
-    }
-}
-
-// Fallback load comments tanpa join
-async function loadCommentsFallback() {
-    try {
-        const { data, error } = await supabase
-            .from("comments")
-            .select("*")
-            .eq("movie_id", movieId)
-            .order("created_at", { ascending: false });
-            
-        if (error) throw error;
-        
-        renderCommentsSimple(data || []);
-        
-    } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
-        if (commentList) commentList.innerHTML = '<div class="loading-comments">Gagal memuat komentar.</div>';
-    }
-}
-
-// Render comments dengan data profiles
-function renderComments(comments) {
-    if (!commentList) return;
-    
-    if (!comments.length) {
-        commentList.innerHTML = '<div class="loading-comments">Belum ada komentar. Jadilah yang pertama berkomentar!</div>';
-        return;
-    }
-    
-    commentList.innerHTML = comments.map(comment => `
-        <div class="comment-item" data-comment-id="${comment.id}">
-            <div class="comment-header">
-                <div class="comment-user">
-                    <div class="comment-avatar-placeholder">${(comment.profiles?.username || 'U').charAt(0).toUpperCase()}</div>
-                    <span class="comment-username">${comment.profiles?.username || 'User'}</span>
-                </div>
-                ${currentUser && comment.user_id === currentUser.id ? 
-                    `<button class="comment-delete" onclick="deleteComment('${comment.id}')">Hapus</button>` : ''
-                }
-            </div>
-            <p class="comment-text">${escapeHtml(comment.comment_text)}</p>
-            <div class="comment-time">${formatTimeAgo(comment.created_at)}</div>
-        </div>
-    `).join('');
-}
-
-// Render comments tanpa data profiles
-function renderCommentsSimple(comments) {
-    if (!commentList) return;
-    
-    if (!comments.length) {
-        commentList.innerHTML = '<div class="loading-comments">Belum ada komentar. Jadilah yang pertama berkomentar!</div>';
-        return;
-    }
-    
-    commentList.innerHTML = comments.map(comment => `
-        <div class="comment-item" data-comment-id="${comment.id}">
-            <div class="comment-header">
-                <div class="comment-user">
-                    <div class="comment-avatar-placeholder">U</div>
-                    <span class="comment-username">User</span>
-                </div>
-                ${currentUser && comment.user_id === currentUser.id ? 
-                    `<button class="comment-delete" onclick="deleteComment('${comment.id}')">Hapus</button>` : ''
-                }
-            </div>
-            <p class="comment-text">${escapeHtml(comment.comment_text)}</p>
-            <div class="comment-time">${formatTimeAgo(comment.created_at)}</div>
-        </div>
-    `).join('');
-}
-
-// Post comment
-async function postComment() {
-    if (!currentUser) {
-        showLoginPopup("berkomentar");
-        return;
-    }
-    
-    const commentText = commentInput ? commentInput.value.trim() : '';
-    
-    if (!commentText) {
-        showError('Komentar tidak boleh kosong');
-        return;
-    }
-    
-    try {
-        const { error } = await supabase
-            .from("comments")
-            .insert({
-                movie_id: movieId,
-                user_id: currentUser.id,
-                comment_text: commentText
-            });
-            
-        if (error) throw error;
-        
-        if (commentInput) commentInput.value = '';
-        await loadComments();
-        showSuccessPopup('Komentar berhasil dikirim!');
-        
-    } catch (error) {
-        console.error('Exception in postComment:', error);
-        showError('Gagal mengirim komentar');
-    }
-}
-
-// Delete comment
-async function deleteComment(commentId) {
-    if (!confirm('Hapus komentar ini?')) return;
-    
-    try {
-        const { error } = await supabase
-            .from("comments")
-            .delete()
-            .eq("id", commentId)
-            .eq("user_id", currentUser.id);
-            
-        if (error) throw error;
-        
-        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
-        if (commentElement) {
-            commentElement.remove();
-        }
-        showSuccessPopup('Komentar berhasil dihapus!');
-        
-    } catch (error) {
-        console.error('Exception in deleteComment:', error);
-        showError('Gagal menghapus komentar');
     }
 }
 
@@ -691,23 +508,6 @@ function renderRecommendations(movies) {
 // UTILITY FUNCTIONS
 // ===============================
 
-// Toggle comments
-function toggleComments() {
-    if (!commentList || !toggleCommentsBtn) return;
-    
-    commentsExpanded = !commentsExpanded;
-    
-    if (commentsExpanded) {
-        commentList.classList.remove("comments-collapsed");
-        commentList.classList.add("comments-expanded");
-        toggleCommentsBtn.textContent = "Sembunyikan";
-    } else {
-        commentList.classList.remove("comments-expanded");
-        commentList.classList.add("comments-collapsed");
-        toggleCommentsBtn.textContent = "Lihat Semua";
-    }
-}
-
 // Show login popup
 function showLoginPopup(action = "melakukan aksi ini") {
     const popupText = document.querySelector(".login-popup p");
@@ -815,5 +615,4 @@ function formatTimeAgo(dateString) {
 }
 
 // Global functions
-window.deleteComment = deleteComment;
 window.handleVideoError = handleVideoError;
