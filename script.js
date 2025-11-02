@@ -109,6 +109,50 @@ function shuffleArray(array) {
     return shuffled;
 }
 
+// Generate thumbnail URL dari video URL
+function generateThumbnailUrl(videoUrl, movieTitle = "") {
+    if (!videoUrl) return 'https://placehold.co/400x225?text=No+Thumbnail';
+    
+    // YouTube thumbnail
+    if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
+        let videoId;
+        if (videoUrl.includes("youtube.com/watch?v=")) {
+            videoId = new URL(videoUrl).searchParams.get("v");
+        } else if (videoUrl.includes("youtu.be/")) {
+            videoId = videoUrl.split("youtu.be/")[1].split('?')[0];
+        }
+        
+        if (videoId) {
+            return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+        }
+    }
+    
+    // Google Drive thumbnail
+    if (videoUrl.includes("drive.google.com")) {
+        let fileId;
+        if (videoUrl.includes("/file/d/")) {
+            fileId = videoUrl.split('/file/d/')[1].split('/')[0];
+        } else if (videoUrl.includes("id=")) {
+            fileId = new URL(videoUrl).searchParams.get("id");
+        }
+        
+        if (fileId) {
+            return `https://lh3.googleusercontent.com/d/${fileId}=s220?authuser=0`;
+        }
+    }
+    
+    // Supabase Storage - coba generate thumbnail
+    if (videoUrl.includes("supabase.co/storage/v1/object/public/videos/")) {
+        // Untuk video di Supabase Storage, kita bisa mencoba membuat placeholder
+        const videoName = videoUrl.split('/').pop();
+        return `https://placehold.co/400x225/667eea/ffffff?text=${encodeURIComponent(videoName.split('.')[0] || 'Video')}`;
+    }
+    
+    // Default placeholder dengan judul film
+    const shortTitle = movieTitle.length > 15 ? movieTitle.substring(0, 15) + '...' : movieTitle;
+    return `https://placehold.co/400x225/667eea/ffffff?text=${encodeURIComponent(shortTitle || 'Video')}`;
+}
+
 // Filter movies berdasarkan category, tab, dan search
 function filterMovies() {
     let filteredMovies = [...allMovies];
@@ -170,11 +214,14 @@ function displayMovies(movies) {
         const views = movie.views || 0;
         const viewsText = views >= 1000 ? `${(views / 1000).toFixed(1)}K` : views.toString();
         
+        // Generate thumbnail URL otomatis jika tidak ada thumbnail_url
+        const thumbnailUrl = movie.thumbnail_url || generateThumbnailUrl(movie.video_url, movie.title);
+        
         return `
         <div class="movie-card" data-id="${movie.id}">
             <div class="movie-thumbnail-container">
                 <img 
-                    src="${movie.thumbnail_url || 'https://placehold.co/400x225?text=No+Thumbnail'}" 
+                    src="${thumbnailUrl}" 
                     alt="${movie.title}"
                     class="movie-thumbnail"
                     onerror="this.src='https://placehold.co/400x225?text=No+Thumbnail'"

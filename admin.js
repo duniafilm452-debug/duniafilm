@@ -177,11 +177,6 @@ function validateForm() {
         return false;
     }
     
-    if (!currentThumbnailFile && !thumbnailUrl) {
-        showError('Thumbnail harus diupload atau URL gambar harus diisi');
-        return false;
-    }
-    
     if (thumbnailUrl && !isValidImageUrl(thumbnailUrl)) {
         showError('URL gambar thumbnail tidak valid');
         return false;
@@ -213,6 +208,49 @@ function validateVideoUrl() {
     } else {
         elements.videoUrl.style.borderColor = '#ddd';
     }
+}
+
+// Generate thumbnail URL dari video URL
+function generateThumbnailUrl(videoUrl, movieTitle = "") {
+    if (!videoUrl) return 'https://placehold.co/400x225?text=No+Thumbnail';
+    
+    // YouTube thumbnail
+    if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
+        let videoId;
+        if (videoUrl.includes("youtube.com/watch?v=")) {
+            videoId = new URL(videoUrl).searchParams.get("v");
+        } else if (videoUrl.includes("youtu.be/")) {
+            videoId = videoUrl.split("youtu.be/")[1].split('?')[0];
+        }
+        
+        if (videoId) {
+            return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+        }
+    }
+    
+    // Google Drive thumbnail
+    if (videoUrl.includes("drive.google.com")) {
+        let fileId;
+        if (videoUrl.includes("/file/d/")) {
+            fileId = videoUrl.split('/file/d/')[1].split('/')[0];
+        } else if (videoUrl.includes("id=")) {
+            fileId = new URL(videoUrl).searchParams.get("id");
+        }
+        
+        if (fileId) {
+            return `https://lh3.googleusercontent.com/d/${fileId}=s220?authuser=0`;
+        }
+    }
+    
+    // Supabase Storage - coba generate placeholder
+    if (videoUrl.includes("supabase.co/storage/v1/object/public/videos/")) {
+        const videoName = videoUrl.split('/').pop();
+        return `https://placehold.co/400x225/667eea/ffffff?text=${encodeURIComponent(videoName.split('.')[0] || 'Video')}`;
+    }
+    
+    // Default placeholder dengan judul film
+    const shortTitle = movieTitle.length > 15 ? movieTitle.substring(0, 15) + '...' : movieTitle;
+    return `https://placehold.co/400x225/667eea/ffffff?text=${encodeURIComponent(shortTitle || 'Video')}`;
 }
 
 // Handle thumbnail upload
@@ -400,7 +438,11 @@ async function uploadMovie() {
         } else if (elements.thumbnailUrl.value.trim()) {
             thumbnailUrl = elements.thumbnailUrl.value.trim();
         } else {
-            throw new Error('Thumbnail harus disediakan');
+            // Jika tidak ada thumbnail yang diupload, generate dari URL video
+            const videoUrl = elements.videoUrl.value.trim();
+            const movieTitle = elements.movieTitle.value.trim();
+            thumbnailUrl = generateThumbnailUrl(videoUrl, movieTitle);
+            console.log('Generated thumbnail URL:', thumbnailUrl);
         }
         
         const movieData = {
@@ -584,7 +626,7 @@ function displayMoviesList(movies) {
                                 <label>Thumbnail</label>
                                 <div class="edit-thumbnail-container">
                                     <div class="current-thumbnail">
-                                        <img src="${movie.thumbnail_url || 'https://placehold.co/120x90?text=No+Thumb'}" 
+                                        <img src="${movie.thumbnail_url || generateThumbnailUrl(movie.video_url, movie.title)}" 
                                              alt="Current thumbnail"
                                              onerror="this.src='https://placehold.co/120x90?text=No+Thumb'">
                                         <small>Thumbnail Saat Ini</small>
@@ -638,7 +680,7 @@ function displayMoviesList(movies) {
         
         return `
         <div class="movie-item">
-            <img src="${movie.thumbnail_url || 'https://placehold.co/80x60?text=No+Thumb'}" 
+            <img src="${movie.thumbnail_url || generateThumbnailUrl(movie.video_url, movie.title)}" 
                  alt="${movie.title}" 
                  class="movie-thumbnail"
                  onerror="this.src='https://placehold.co/80x60?text=No+Thumb'">
@@ -731,6 +773,12 @@ async function handleEditSubmit(event, movieId) {
         const thumbnailUrl = await uploadEditThumbnail(movieId);
         if (thumbnailUrl) {
             updateData.thumbnail_url = thumbnailUrl;
+        }
+    } else {
+        // Jika tidak ada thumbnail baru yang diupload, generate dari URL video
+        const movie = allMovies.find(m => m.id === movieId);
+        if (movie) {
+            updateData.thumbnail_url = generateThumbnailUrl(updateData.video_url, updateData.title);
         }
     }
     
