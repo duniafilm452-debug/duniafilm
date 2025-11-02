@@ -16,6 +16,13 @@ const shareBtn = document.getElementById("share-btn");
 const likeCount = document.getElementById("like-count");
 const recommendList = document.getElementById("recommend-list");
 
+// Elemen baru untuk episode
+const episodesTab = document.getElementById("episodes-tab");
+const recommendationsTab = document.getElementById("recommendations-tab");
+const episodesContent = document.getElementById("episodes-content");
+const recommendationsContent = document.getElementById("recommendations-content");
+const episodesList = document.getElementById("episodes-list");
+
 // Popup
 const popup = document.getElementById("login-popup");
 const popupCancel = document.getElementById("popup-cancel");
@@ -68,6 +75,10 @@ function setupEventListeners() {
     if (likeBtn) likeBtn.onclick = handleLike;
     if (favBtn) favBtn.onclick = handleFavorite;
     if (shareBtn) shareBtn.onclick = handleShare;
+    
+    // Tab navigation
+    if (episodesTab) episodesTab.onclick = () => switchTab('episodes');
+    if (recommendationsTab) recommendationsTab.onclick = () => switchTab('recommendations');
     
     // Video events
     if (videoPlayer) {
@@ -138,14 +149,45 @@ async function loadMovie() {
         if (videoPlayer) videoPlayer.src = videoUrl;
 
         await Promise.all([
-            loadRecommendations(),
             checkLikeStatus(),
             checkFavoriteStatus()
         ]);
 
+        // Cek apakah film ini bagian dari series
+        const seriesTitle = extractSeriesTitle(currentMovie.title);
+        if (seriesTitle) {
+            // Jika ada series, default tab ke episodes
+            setTimeout(() => switchTab('episodes'), 100);
+        } else {
+            // Jika bukan series, default tab ke recommendations
+            setTimeout(() => switchTab('recommendations'), 100);
+        }
+
     } catch (error) {
         console.error('Exception in loadMovie:', error);
         showError('Terjadi kesalahan saat memuat film');
+    }
+}
+
+// Switch tab function
+function switchTab(tabName) {
+    // Update tab buttons
+    if (episodesTab && recommendationsTab) {
+        episodesTab.classList.toggle('active', tabName === 'episodes');
+        recommendationsTab.classList.toggle('active', tabName === 'recommendations');
+    }
+    
+    // Update tab content
+    if (episodesContent && recommendationsContent) {
+        episodesContent.classList.toggle('active', tabName === 'episodes');
+        recommendationsContent.classList.toggle('active', tabName === 'recommendations');
+    }
+    
+    // Load content jika diperlukan
+    if (tabName === 'episodes') {
+        loadEpisodes();
+    } else if (tabName === 'recommendations') {
+        loadRecommendations();
     }
 }
 
@@ -259,7 +301,7 @@ async function updateViewCount() {
                 .single();
                 
             if (updatedMovie && viewCount) {
-                viewCount.textContent = `️ ${updatedMovie.views || 0} tayangan`;
+                viewCount.textContent = `👁️ ${updatedMovie.views || 0} tayangan`;
             }
         }
         
@@ -461,23 +503,160 @@ async function updateLikeCount() {
     }
 }
 
-// Load recommendations
+// ===============================
+// FUNGSI EPISODE
+// ===============================
+
+// Load episodes
+async function loadEpisodes() {
+    if (!movieId || !currentMovie) return;
+    
+    try {
+        if (episodesList) episodesList.innerHTML = '<div class="loading-episodes">Memuat episode...</div>';
+        
+        // Ekstrak judul series dari judul film
+        const seriesTitle = extractSeriesTitle(currentMovie.title);
+        
+        if (!seriesTitle) {
+            episodesList.innerHTML = '<div class="loading-episodes">Tidak ada episode lainnya.</div>';
+            return;
+        }
+        
+        // Cari semua episode dari series yang sama
+        const { data: episodes, error } = await supabase
+            .from("movies")
+            .select("*")
+            .ilike("title", `${seriesTitle}%`)
+            .order("created_at", { ascending: true });
+            
+        if (error) throw error;
+        
+        renderEpisodes(episodes || []);
+        
+    } catch (error) {
+        console.error('Exception in loadEpisodes:', error);
+        if (episodesList) episodesList.innerHTML = '<div class="loading-episodes">Gagal memuat episode.</div>';
+    }
+}
+
+// Extract series title dari judul film
+function extractSeriesTitle(title) {
+    if (!title) return null;
+    
+    // Pattern untuk mendeteksi episode (Episode 1, Part 2, Chapter 3, dll)
+    const episodePatterns = [
+        /(.*?)\s*[Ee]pisode\s*\d+/i,
+        /(.*?)\s*[Pp]art\s*\d+/i,
+        /(.*?)\s*[Cc]hapter\s*\d+/i,
+        /(.*?)\s*-\s*[Ee]pisode\s*\d+/i,
+        /(.*?)\s*\(\s*[Ee]pisode\s*\d+\s*\)/i,
+        /(.*?)\s*\d+$/ // Pattern untuk judul yang diakhiri angka
+    ];
+    
+    for (const pattern of episodePatterns) {
+        const match = title.match(pattern);
+        if (match && match[1]) {
+            return match[1].trim();
+        }
+    }
+    
+    return null;
+}
+
+// Extract episode number
+function extractEpisodeNumber(title) {
+    if (!title) return null;
+    
+    const episodePatterns = [
+        /[Ee]pisode\s*(\d+)/i,
+        /[Pp]art\s*(\d+)/i,
+        /[Cc]hapter\s*(\d+)/i,
+        /-\s*(\d+)$/,
+        /\(\s*(\d+)\s*\)$/,
+        /(\d+)$/
+    ];
+    
+    for (const pattern of episodePatterns) {
+        const match = title.match(pattern);
+        if (match && match[1]) {
+            return parseInt(match[1]);
+        }
+    }
+    
+    return null;
+}
+
+// Render episodes
+function renderEpisodes(episodes) {
+    if (!episodesList) return;
+    
+    if (!episodes || episodes.length === 0) {
+        episodesList.innerHTML = '<div class="loading-episodes">Tidak ada episode lainnya.</div>';
+        return;
+    }
+    
+    episodesList.innerHTML = episodes.map(movie => {
+        const episodeNumber = extractEpisodeNumber(movie.title);
+        const isCurrentEpisode = movie.id === parseInt(movieId);
+        
+        return `
+            <div class="episode-item ${isCurrentEpisode ? 'current' : ''}" 
+                 onclick="location.href='detail.html?id=${movie.id}'">
+                <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}" 
+                     alt="${movie.title}" 
+                     onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'"
+                     loading="lazy">
+                <div class="episode-info">
+                    <div class="episode-number">${episodeNumber ? `Episode ${episodeNumber}` : 'Episode'}</div>
+                    <p class="episode-title">${escapeHtml(movie.title)}</p>
+                    <div class="episode-meta">
+                        <span class="views">👁️ ${movie.views || 0}</span>
+                        <span class="episode-duration">${movie.duration || '--:--'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ===============================
+// FUNGSI REKOMENDASI (VIDEO ACAK)
+// ===============================
+
+// Load recommendations - RANDOM VERSION
 async function loadRecommendations() {
     if (!movieId) return;
     
     try {
         if (recommendList) recommendList.innerHTML = '<div class="loading-recommendations">Memuat rekomendasi...</div>';
         
-        const { data, error } = await supabase
+        // Ambil 30-40 video secara acak yang bukan episode dari film yang sama
+        const { data: randomMovies, error } = await supabase
             .from("movies")
             .select("*")
             .neq("id", movieId)
-            .limit(6)
-            .order("created_at", { ascending: false });
+            .limit(40);
             
         if (error) throw error;
         
-        renderRecommendations(data || []);
+        // Filter untuk menghilangkan episode dari series yang sama
+        const seriesTitle = extractSeriesTitle(currentMovie?.title);
+        let filteredMovies = randomMovies || [];
+        
+        if (seriesTitle) {
+            filteredMovies = filteredMovies.filter(movie => {
+                const movieSeriesTitle = extractSeriesTitle(movie.title);
+                return movieSeriesTitle !== seriesTitle;
+            });
+        }
+        
+        // Acak urutan video
+        const shuffledMovies = shuffleArray(filteredMovies);
+        
+        // Ambil 20-30 video untuk ditampilkan
+        const finalRecommendations = shuffledMovies.slice(0, 30);
+        
+        renderRecommendations(finalRecommendations);
         
     } catch (error) {
         console.error('Exception in loadRecommendations:', error);
@@ -485,21 +664,39 @@ async function loadRecommendations() {
     }
 }
 
+// Fungsi untuk mengacak array
+function shuffleArray(array) {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
+}
+
 // Render recommendations
 function renderRecommendations(movies) {
     if (!recommendList) return;
     
-    if (!movies.length) {
+    if (!movies || movies.length === 0) {
         recommendList.innerHTML = '<div class="loading-recommendations">Tidak ada rekomendasi.</div>';
         return;
     }
     
+    // Tampilkan video dengan grid yang responsive
     recommendList.innerHTML = movies.map(movie => `
         <div class="recommend-item" onclick="location.href='detail.html?id=${movie.id}'">
             <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}" 
                  alt="${movie.title}" 
-                 onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'">
-            <p>${escapeHtml(movie.title)}</p>
+                 onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'"
+                 loading="lazy">
+            <div class="recommend-info">
+                <p class="recommend-title-text">${escapeHtml(movie.title)}</p>
+                <div class="recommend-meta">
+                    <span class="views">👁️ ${movie.views || 0}</span>
+                    ${movie.genre ? `<span class="genre">${escapeHtml(movie.genre.split(',')[0])}</span>` : ''}
+                </div>
+            </div>
         </div>
     `).join('');
 }

@@ -44,11 +44,25 @@
             <p id="movie-desc">Memuat deskripsi...</p>
         </section>
 
-        <!-- Recommendations -->
-        <section class="yt-recommend">
-            <h3 style="margin-bottom: 20px;">Rekomendasi Film Lainnya</h3>
-            <div id="recommend-list" class="yt-grid">
-                <div class="loading-recommendations">Memuat rekomendasi...</div>
+        <!-- Tab Navigation -->
+        <section class="tab-navigation">
+            <div class="tab-buttons">
+                <button id="episodes-tab" class="tab-btn active" data-tab="episodes">Episode</button>
+                <button id="recommendations-tab" class="tab-btn" data-tab="recommendations">Rekomendasi</button>
+            </div>
+            
+            <!-- Episodes Content -->
+            <div id="episodes-content" class="tab-content active">
+                <div id="episodes-list" class="episodes-grid">
+                    <div class="loading-episodes">Memuat episode...</div>
+                </div>
+            </div>
+            
+            <!-- Recommendations Content -->
+            <div id="recommendations-content" class="tab-content">
+                <div id="recommend-list" class="recommendations-grid">
+                    <div class="loading-recommendations">Memuat rekomendasi...</div>
+                </div>
             </div>
         </section>
     </main>
