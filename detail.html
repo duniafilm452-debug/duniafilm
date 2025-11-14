@@ -14,35 +14,14 @@
 
     <!-- Main Content -->
     <main class="yt-main">
-        <!-- Video Player Container dengan Area Iklan -->
-        <div class="video-ad-container">
-            <!-- Iklan Pre-roll -->
-            <div id="preroll-ad-container" class="ad-container hidden">
-                <div id="preroll-ad" class="video-ad-player"></div>
-                <div class="ad-skip-counter">
-                    Iklan dapat dilewati dalam <span id="skip-counter">5</span> detik
-                    <button id="skip-ad-btn" class="skip-ad-btn hidden">Lewati Iklan</button>
-                </div>
-            </div>
-
-            <!-- Video Player Utama -->
-            <div class="yt-video-container">
-                <iframe 
-                    id="video-player"
-                    frameborder="0" 
-                    allowfullscreen
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                ></iframe>
-            </div>
-
-            <!-- Iklan Mid-roll (akan muncul selama video) -->
-            <div id="midroll-ad-container" class="ad-container midroll-ad hidden">
-                <div id="midroll-ad" class="video-ad-player"></div>
-                <div class="ad-skip-counter">
-                    Iklan dapat dilewati dalam <span id="midroll-skip-counter">5</span> detik
-                    <button id="skip-midroll-ad-btn" class="skip-ad-btn hidden">Lewati Iklan</button>
-                </div>
-            </div>
+        <!-- Video Player -->
+        <div class="yt-video-container">
+            <iframe 
+                id="video-player"
+                frameborder="0" 
+                allowfullscreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            ></iframe>
         </div>
 
         <!-- Video Info -->
@@ -88,12 +67,6 @@
         </section>
     </main>
 
-    <!-- Iklan Post-roll -->
-    <div id="postroll-ad-container" class="ad-container postroll-ad hidden">
-        <div id="postroll-ad" class="video-ad-player"></div>
-        <button id="close-postroll-ad" class="close-ad-btn">Tutup</button>
-    </div>
-
     <!-- Login Popup -->
     <div id="login-popup" class="popup-overlay hidden">
         <div class="popup-box">
@@ -133,8 +106,6 @@
         <p>Memuat...</p>
     </div>
 
-    <!-- Script Iklan VAST -->
-    <script src="https://imasdk.googleapis.com/js/sdkloader/ima3.js"></script>
     <script type="module" src="detail.js"></script>
 </body>
 </html>
