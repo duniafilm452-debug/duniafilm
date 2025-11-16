@@ -5,9 +5,6 @@ const SUPABASE_URL = "https://kwuqrsnkxlxzqvimoydu.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3dXFyc25reGx4enF2aW1veWR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTQ5ODUsImV4cCI6MjA3NDk5MDk4NX0.6XQjnexc69VVSzvB5XrL8gFGM54Me9c5TrR20ysfvTk";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Konfigurasi Iklan VAST
-const VAST_TAG_URL = "https://overdue-truth.com/d.mzFuzsdrGJN/vlZgGLUJ/rejmX9/ujZsUrlwk/P/TtYw2SO_TSIi4ZMHDSIttuN/jpYn5HMSjxgwwtMTwz";
-
 // Elemen HTML
 const videoPlayer = document.getElementById("video-player");
 const titleBelowEl = document.getElementById("movie-title-below");
@@ -19,37 +16,17 @@ const shareBtn = document.getElementById("share-btn");
 const likeCount = document.getElementById("like-count");
 const recommendList = document.getElementById("recommend-list");
 
-// Elemen untuk episode
+// Elemen baru untuk episode
 const episodesTab = document.getElementById("episodes-tab");
 const recommendationsTab = document.getElementById("recommendations-tab");
 const episodesContent = document.getElementById("episodes-content");
 const recommendationsContent = document.getElementById("recommendations-content");
 const episodesList = document.getElementById("episodes-list");
 
-// Elemen Iklan
-const prerollAdContainer = document.getElementById("preroll-ad-container");
-const midrollAdContainer = document.getElementById("midroll-ad-container");
-const postrollAdContainer = document.getElementById("postroll-ad-container");
-const skipAdBtn = document.getElementById("skip-ad-btn");
-const skipMidrollAdBtn = document.getElementById("skip-midroll-ad-btn");
-const closePostrollAdBtn = document.getElementById("close-postroll-ad");
-
-// Elemen Popup
+// Popup
 const popup = document.getElementById("login-popup");
 const popupCancel = document.getElementById("popup-cancel");
 const popupLogin = document.getElementById("popup-login");
-
-// Variabel Iklan
-let adsManager;
-let adsLoader;
-let adDisplayContainer;
-let isAdPlaying = false;
-let midrollAdPlayed = false;
-let postrollAdPlayed = false;
-let videoPlayTime = 0;
-let videoDuration = 0;
-let midrollAdTimer;
-let skipTimer;
 
 // Data aplikasi
 const params = new URLSearchParams(window.location.search);
@@ -62,229 +39,7 @@ let hasIncrementedViews = false;
 document.addEventListener('DOMContentLoaded', async () => {
     await initializeApp();
     setupEventListeners();
-    initializeIMA(); // Inisialisasi IMA SDK
 });
-
-// ===============================
-// INISIALISASI IKLAN IMA
-// ===============================
-
-function initializeIMA() {
-    try {
-        // Setup ad display container
-        adDisplayContainer = new google.ima.AdDisplayContainer(
-            prerollAdContainer,
-            videoPlayer
-        );
-        
-        // Create ads loader
-        adsLoader = new google.ima.AdsLoader(adDisplayContainer);
-        
-        // Add event listeners
-        adsLoader.addEventListener(
-            google.ima.AdsManagerLoadedEvent.Type.ADS_MANAGER_LOADED,
-            onAdsManagerLoaded
-        );
-        
-        adsLoader.addEventListener(
-            google.ima.AdErrorEvent.Type.AD_ERROR,
-            onAdError
-        );
-        
-    } catch (error) {
-        console.error('Error initializing IMA:', error);
-    }
-}
-
-function onAdsManagerLoaded(event) {
-    try {
-        const adsRenderingSettings = new google.ima.AdsRenderingSettings();
-        adsRenderingSettings.restoreCustomPlaybackStateOnAdBreakComplete = true;
-        
-        adsManager = event.getAdsManager(
-            videoPlayer,
-            adsRenderingSettings
-        );
-        
-        adsManager.addEventListener(
-            google.ima.AdErrorEvent.Type.AD_ERROR,
-            onAdError
-        );
-        
-        adsManager.addEventListener(
-            google.ima.AdEvent.Type.CONTENT_PAUSE_REQUESTED,
-            onContentPause
-        );
-        
-        adsManager.addEventListener(
-            google.ima.AdEvent.Type.CONTENT_RESUME_REQUESTED,
-            onContentResume
-        );
-        
-        adsManager.addEventListener(
-            google.ima.AdEvent.Type.SKIPPABLE_STATE_CHANGED,
-            onSkippableStateChanged
-        );
-        
-    } catch (error) {
-        console.error('Error loading ads manager:', error);
-    }
-}
-
-function onAdError(error) {
-    console.error('Ad error:', error);
-    resumeContent();
-}
-
-function onContentPause() {
-    isAdPlaying = true;
-    if (videoPlayer) videoPlayer.style.display = 'none';
-}
-
-function onContentResume() {
-    isAdPlaying = false;
-    if (videoPlayer) videoPlayer.style.display = 'block';
-    hideAllAdContainers();
-}
-
-function onSkippableStateChanged(event) {
-    if (event.getAd().getSkipTimeOffset() !== -1) {
-        const skipBtn = isAdPlaying ? skipAdBtn : skipMidrollAdBtn;
-        if (skipBtn) {
-            skipBtn.classList.remove('hidden');
-            startSkipTimer(event.getAd().getSkipTimeOffset(), skipBtn);
-        }
-    }
-}
-
-function startSkipTimer(skipTime, skipButton) {
-    let timeLeft = Math.ceil(skipTime);
-    const counter = isAdPlaying ? 
-        document.getElementById('skip-counter') : 
-        document.getElementById('midroll-skip-counter');
-    
-    if (skipTimer) clearInterval(skipTimer);
-    
-    skipTimer = setInterval(() => {
-        timeLeft--;
-        if (counter) counter.textContent = timeLeft;
-        
-        if (timeLeft <= 0) {
-            clearInterval(skipTimer);
-            if (skipButton) skipButton.classList.remove('hidden');
-        }
-    }, 1000);
-}
-
-function hideAllAdContainers() {
-    if (prerollAdContainer) prerollAdContainer.classList.add('hidden');
-    if (midrollAdContainer) midrollAdContainer.classList.add('hidden');
-    if (postrollAdContainer) postrollAdContainer.classList.add('hidden');
-}
-
-function resumeContent() {
-    hideAllAdContainers();
-    isAdPlaying = false;
-    if (videoPlayer) videoPlayer.style.display = 'block';
-}
-
-// ===============================
-// FUNGSI MANAJEMEN IKLAN
-// ===============================
-
-async function playPrerollAd() {
-    if (isAdPlaying || !prerollAdContainer) return;
-    
-    try {
-        prerollAdContainer.classList.remove('hidden');
-        if (videoPlayer) videoPlayer.style.display = 'none';
-        
-        adDisplayContainer.initialize();
-        
-        const adsRequest = new google.ima.AdsRequest();
-        adsRequest.adTagUrl = VAST_TAG_URL;
-        adsRequest.linearAdSlotWidth = videoPlayer ? videoPlayer.offsetWidth : 640;
-        adsRequest.linearAdSlotHeight = videoPlayer ? videoPlayer.offsetHeight : 360;
-        
-        adsLoader.requestAds(adsRequest);
-        
-    } catch (error) {
-        console.error('Error playing preroll ad:', error);
-        resumeContent();
-    }
-}
-
-async function playMidrollAd() {
-    if (isAdPlaying || midrollAdPlayed || !midrollAdContainer) return;
-    
-    try {
-        midrollAdContainer.classList.remove('hidden');
-        if (videoPlayer) videoPlayer.style.display = 'none';
-        
-        adDisplayContainer.initialize();
-        
-        const adsRequest = new google.ima.AdsRequest();
-        adsRequest.adTagUrl = VAST_TAG_URL;
-        adsRequest.linearAdSlotWidth = videoPlayer ? videoPlayer.offsetWidth : 640;
-        adsRequest.linearAdSlotHeight = videoPlayer ? videoPlayer.offsetHeight : 360;
-        
-        adsLoader.requestAds(adsRequest);
-        midrollAdPlayed = true;
-        
-    } catch (error) {
-        console.error('Error playing midroll ad:', error);
-        resumeContent();
-    }
-}
-
-async function playPostrollAd() {
-    if (isAdPlaying || postrollAdPlayed || !postrollAdContainer) return;
-    
-    try {
-        postrollAdContainer.classList.remove('hidden');
-        
-        adDisplayContainer.initialize();
-        
-        const adsRequest = new google.ima.AdsRequest();
-        adsRequest.adTagUrl = VAST_TAG_URL;
-        adsRequest.linearAdSlotWidth = 400;
-        adsRequest.linearAdSlotHeight = 300;
-        
-        adsLoader.requestAds(adsRequest);
-        postrollAdPlayed = true;
-        
-    } catch (error) {
-        console.error('Error playing postroll ad:', error);
-        if (postrollAdContainer) postrollAdContainer.classList.add('hidden');
-    }
-}
-
-function startMidrollAdMonitoring() {
-    if (midrollAdTimer) clearInterval(midrollAdTimer);
-    
-    midrollAdTimer = setInterval(() => {
-        if (!videoPlayer || !videoPlayer.duration) return;
-        
-        videoPlayTime = videoPlayer.currentTime || 0;
-        videoDuration = videoPlayer.duration || 0;
-        
-        // Mainkan iklan midroll setelah 30 detik
-        if (videoPlayTime >= 30 && !midrollAdPlayed && !isAdPlaying) {
-            playMidrollAd();
-        }
-        
-        // Mainkan iklan postroll ketika video selesai
-        if (videoPlayTime >= videoDuration - 2 && !postrollAdPlayed) {
-            playPostrollAd();
-            clearInterval(midrollAdTimer);
-        }
-        
-    }, 1000);
-}
-
-// ===============================
-// FUNGSI UTAMA APLIKASI
-// ===============================
 
 // Fungsi inisialisasi
 async function initializeApp() {
@@ -330,24 +85,7 @@ function setupEventListeners() {
         videoPlayer.addEventListener('load', handleVideoLoad);
         videoPlayer.addEventListener('play', handleVideoPlay);
         videoPlayer.addEventListener('error', handleVideoError);
-        videoPlayer.addEventListener('canplay', handleVideoCanPlay);
     }
-
-    // Ad events
-    if (skipAdBtn) skipAdBtn.onclick = () => {
-        if (adsManager) adsManager.skip();
-        if (skipTimer) clearInterval(skipTimer);
-    };
-    
-    if (skipMidrollAdBtn) skipMidrollAdBtn.onclick = () => {
-        if (adsManager) adsManager.skip();
-        if (skipTimer) clearInterval(skipTimer);
-    };
-    
-    if (closePostrollAdBtn) closePostrollAdBtn.onclick = () => {
-        if (postrollAdContainer) postrollAdContainer.classList.add('hidden');
-        if (adsManager) adsManager.destroy();
-    };
 
     // Auth state changes
     supabase.auth.onAuthStateChange(async (event, session) => {
@@ -365,16 +103,9 @@ function setupEventListeners() {
     });
 }
 
-// Handle video can play - tambahkan iklan pre-roll
-function handleVideoCanPlay() {
-    // Mainkan iklan pre-roll ketika video siap diputar
-    setTimeout(() => {
-        playPrerollAd();
-    }, 1000);
-    
-    // Mulai monitoring untuk iklan mid-roll
-    startMidrollAdMonitoring();
-}
+// ===============================
+// FUNGSI UTAMA
+// ===============================
 
 // Load movie data
 async function loadMovie() {
@@ -509,7 +240,7 @@ function processVideoUrl(videoUrl) {
     return videoUrl;
 }
 
-// Update view count
+// Update view count - FIXED VERSION
 async function updateViewCount() {
     if (!movieId || hasIncrementedViews) return;
     
@@ -583,6 +314,7 @@ async function updateViewCount() {
         
     } catch (error) {
         console.error('Exception in updateViewCount:', error);
+        // Tetap tampilkan error tapi jangan ganggu user experience
     }
 }
 
@@ -786,7 +518,7 @@ async function loadEpisodes() {
         const seriesTitle = extractSeriesTitle(currentMovie.title);
         
         if (!seriesTitle) {
-            if (episodesList) episodesList.innerHTML = '<div class="loading-episodes">Tidak ada episode lainnya.</div>';
+            episodesList.innerHTML = '<div class="loading-episodes">Tidak ada episode lainnya.</div>';
             return;
         }
         
@@ -975,7 +707,7 @@ function renderRecommendations(movies) {
 
 // Show login popup
 function showLoginPopup(action = "melakukan aksi ini") {
-    const popupText = document.querySelector("#login-popup p");
+    const popupText = document.querySelector(".login-popup p");
     if (popupText) popupText.textContent = `Untuk ${action}, silakan login terlebih dahulu.`;
     if (popup) popup.classList.remove("hidden");
 }

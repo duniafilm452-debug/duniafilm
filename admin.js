@@ -7,7 +7,20 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Elemen DOM
 const elements = {
-    // Form elements
+    // Dashboard elements
+    totalMovies: document.getElementById('total-movies'),
+    totalViews: document.getElementById('total-views'),
+    totalUsers: document.getElementById('total-users'),
+    totalLikes: document.getElementById('total-likes'),
+    adminNameDisplay: document.getElementById('admin-name-display'),
+    viewsChart: document.getElementById('views-chart'),
+    categoryChart: document.getElementById('category-chart'),
+    viewsPeriod: document.getElementById('views-period'),
+    activityList: document.getElementById('activity-list'),
+    refreshActivity: document.getElementById('refresh-activity'),
+    topMoviesList: document.getElementById('top-movies-list'),
+    
+    // Upload form elements
     uploadForm: document.getElementById('upload-form'),
     movieTitle: document.getElementById('movie-title'),
     movieDesc: document.getElementById('movie-desc'),
@@ -30,10 +43,6 @@ const elements = {
     submitText: document.getElementById('submit-text'),
     submitSpinner: document.getElementById('submit-spinner'),
     resetBtn: document.getElementById('reset-btn'),
-    backBtn: document.getElementById('back-btn'),
-    
-    // Movies list
-    moviesList: document.getElementById('movies-list'),
     
     // Popups
     successPopup: document.getElementById('success-popup'),
@@ -45,7 +54,10 @@ const elements = {
     
     // Messages
     successMessage: document.getElementById('success-message'),
-    errorMessage: document.getElementById('error-message')
+    errorMessage: document.getElementById('error-message'),
+    
+    // Access denied
+    accessDenied: document.getElementById('access-denied')
 };
 
 let uploadedMovieId = null;
@@ -53,14 +65,16 @@ let currentThumbnailFile = null;
 let allMovies = [];
 let editingMovieId = null;
 let editThumbnailFiles = {};
+let viewsChartInstance = null;
+let categoryChartInstance = null;
+let countdownInterval = null;
 
 // Inisialisasi aplikasi
 document.addEventListener('DOMContentLoaded', async () => {
     await initializeApp();
-    setupEventListeners();
 });
 
-// Fungsi inisialisasi
+// Fungsi inisialisasi dengan security check
 async function initializeApp() {
     const { data: { session }, error } = await supabase.auth.getSession();
     
@@ -75,55 +89,549 @@ async function initializeApp() {
         return;
     }
 
-    await loadMoviesList();
+    // CEK APAKAH USER ADALAH ADMIN
+    const isUserAdmin = await checkIfUserIsAdmin(session.user.id);
+    
+    if (!isUserAdmin) {
+        showAccessDenied();
+        return;
+    }
+
+    // User adalah admin, lanjutkan inisialisasi
+    elements.adminNameDisplay.textContent = session.user.email || 'Admin';
+    setupEventListeners();
+    await loadDashboardData();
+}
+
+// Fungsi untuk mengecek apakah user adalah admin
+async function checkIfUserIsAdmin(userId) {
+    try {
+        // Cek dari user metadata terlebih dahulu
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.user_metadata?.role === 'admin') {
+            return true;
+        }
+        
+        // Cek dari tabel profiles
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', userId)
+            .single();
+            
+        if (error) {
+            console.error('Error checking admin status:', error);
+            return false;
+        }
+        
+        return profile?.role === 'admin';
+    } catch (error) {
+        console.error('Error in checkIfUserIsAdmin:', error);
+        return false;
+    }
+}
+
+// Tampilkan akses ditolak
+function showAccessDenied() {
+    elements.accessDenied.classList.remove('hidden');
+    
+    // Sembunyikan semua section
+    document.querySelectorAll('.dashboard-section').forEach(section => {
+        section.classList.add('hidden');
+    });
+    
+    // Sembunyikan tabs
+    document.querySelector('.admin-tabs').classList.add('hidden');
+    
+    // Start countdown
+    let countdown = 5;
+    const countdownElement = document.getElementById('countdown');
+    
+    countdownInterval = setInterval(() => {
+        countdown--;
+        countdownElement.textContent = countdown;
+        
+        if (countdown <= 0) {
+            redirectToHome();
+        }
+    }, 1000);
+}
+
+// Redirect ke home
+function redirectToHome() {
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+    window.location.href = 'login.html';
 }
 
 // Setup event listeners
 function setupEventListeners() {
-    // Form submission
-    elements.uploadForm.addEventListener('submit', handleFormSubmit);
+    // Dashboard events
+    elements.refreshActivity.addEventListener('click', loadRecentActivity);
+    elements.viewsPeriod.addEventListener('change', loadViewsChart);
     
-    // Thumbnail upload
+    // Upload form events
+    elements.uploadForm.addEventListener('submit', handleFormSubmit);
     elements.thumbnailUploadArea.addEventListener('click', () => elements.thumbnailUpload.click());
     elements.thumbnailUpload.addEventListener('change', handleThumbnailUpload);
     elements.changeThumbnail.addEventListener('click', () => elements.thumbnailUpload.click());
-    
-    // Thumbnail URL input
     elements.thumbnailUrl.addEventListener('input', handleThumbnailUrlInput);
+    elements.categoryFilter.addEventListener('change', filterMovies);
+    elements.resetBtn.addEventListener('click', resetForm);
     
     // Drag and drop untuk thumbnail
     elements.thumbnailUploadArea.addEventListener('dragover', handleDragOver);
     elements.thumbnailUploadArea.addEventListener('dragleave', handleDragLeave);
     elements.thumbnailUploadArea.addEventListener('drop', handleDrop);
     
-    // Filter events
-    elements.categoryFilter.addEventListener('change', filterMovies);
-    
-    // Buttons
-    elements.resetBtn.addEventListener('click', resetForm);
-    elements.backBtn.addEventListener('click', () => window.location.href = 'index.html');
+    // Input validation
+    elements.videoUrl.addEventListener('input', validateVideoUrl);
     
     // Popup buttons
     elements.successOk.addEventListener('click', () => hidePopup('success'));
     elements.successView.addEventListener('click', viewUploadedMovie);
     elements.errorOk.addEventListener('click', () => hidePopup('error'));
-    
-    // Input validation
-    elements.videoUrl.addEventListener('input', validateVideoUrl);
 }
+
+// ===============================
+// DASHBOARD FUNCTIONS
+// ===============================
+
+// Load semua data dashboard
+async function loadDashboardData() {
+    showLoading();
+    
+    try {
+        await Promise.all([
+            loadQuickStats(),
+            loadViewsChart(),
+            loadCategoryChart(),
+            loadRecentActivity(),
+            loadTopMovies()
+        ]);
+    } catch (error) {
+        console.error('Error loading dashboard data:', error);
+        showError('Gagal memuat data dashboard');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Load quick stats
+async function loadQuickStats() {
+    try {
+        // Total Movies
+        const { count: moviesCount, error: moviesError } = await supabase
+            .from('movies')
+            .select('*', { count: 'exact', head: true });
+            
+        if (!moviesError) {
+            elements.totalMovies.textContent = moviesCount || 0;
+        }
+        
+        // Total Views
+        const { data: viewsData, error: viewsError } = await supabase
+            .from('movies')
+            .select('views');
+            
+        if (!viewsError) {
+            const totalViews = viewsData.reduce((sum, movie) => sum + (movie.views || 0), 0);
+            elements.totalViews.textContent = totalViews.toLocaleString();
+        }
+        
+        // Total Users
+        const { count: usersCount, error: usersError } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true });
+            
+        if (!usersError) {
+            elements.totalUsers.textContent = usersCount || 0;
+        }
+        
+        // Total Likes
+        const { count: likesCount, error: likesError } = await supabase
+            .from('likes')
+            .select('*', { count: 'exact', head: true });
+            
+        if (!likesError) {
+            elements.totalLikes.textContent = likesCount || 0;
+        }
+        
+    } catch (error) {
+        console.error('Error loading quick stats:', error);
+    }
+}
+
+// Load views chart
+async function loadViewsChart() {
+    try {
+        const period = elements.viewsPeriod.value;
+        let days = 7;
+        
+        switch (period) {
+            case '30days': days = 30; break;
+            case '90days': days = 90; break;
+            default: days = 7;
+        }
+        
+        const { data: recentMovies, error } = await supabase
+            .from('movies')
+            .select('views, created_at')
+            .gte('created_at', new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString())
+            .order('created_at', { ascending: true });
+            
+        if (error) throw error;
+        
+        // Process data for chart
+        const labels = [];
+        const viewsData = [];
+        
+        // Group by date (simplified)
+        const dailyData = {};
+        recentMovies?.forEach(movie => {
+            const date = new Date(movie.created_at).toLocaleDateString('id-ID', {
+                day: 'numeric',
+                month: 'short'
+            });
+            dailyData[date] = (dailyData[date] || 0) + (movie.views || 0);
+        });
+        
+        Object.keys(dailyData).forEach(date => {
+            labels.push(date);
+            viewsData.push(dailyData[date]);
+        });
+        
+        // Create or update chart
+        const ctx = elements.viewsChart.getContext('2d');
+        
+        if (viewsChartInstance) {
+            viewsChartInstance.destroy();
+        }
+        
+        viewsChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Tayangan',
+                    data: viewsData,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error loading views chart:', error);
+        createSampleViewsChart();
+    }
+}
+
+// Create sample views chart (fallback)
+function createSampleViewsChart() {
+    const ctx = elements.viewsChart.getContext('2d');
+    const labels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+    const data = [1200, 1900, 1500, 2200, 1800, 2500, 2100];
+    
+    viewsChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Tayangan',
+                data: data,
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+}
+
+// Load category chart
+async function loadCategoryChart() {
+    try {
+        const { data: movies, error } = await supabase
+            .from('movies')
+            .select('category');
+            
+        if (error) throw error;
+        
+        // Count movies by category
+        const categoryCount = {};
+        movies?.forEach(movie => {
+            const category = movie.category || 'Lainnya';
+            categoryCount[category] = (categoryCount[category] || 0) + 1;
+        });
+        
+        const labels = Object.keys(categoryCount);
+        const data = Object.values(categoryCount);
+        const backgroundColors = [
+            '#667eea', '#764ba2', '#f093fb', '#4CAF50', '#FF9800', '#E91E63'
+        ];
+        
+        const ctx = elements.categoryChart.getContext('2d');
+        
+        if (categoryChartInstance) {
+            categoryChartInstance.destroy();
+        }
+        
+        categoryChartInstance = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: backgroundColors,
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    }
+                }
+            }
+        });
+        
+    } catch (error) {
+        console.error('Error loading category chart:', error);
+        createSampleCategoryChart();
+    }
+}
+
+// Create sample category chart (fallback)
+function createSampleCategoryChart() {
+    const ctx = elements.categoryChart.getContext('2d');
+    const labels = ['Drakor', 'Dracin', 'Donghua', 'Lainnya'];
+    const data = [15, 12, 8, 10];
+    const backgroundColors = ['#667eea', '#764ba2', '#f093fb', '#4CAF50'];
+    
+    categoryChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: backgroundColors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+// Load recent activity
+async function loadRecentActivity() {
+    try {
+        elements.activityList.innerHTML = `
+            <div class="loading-activity">
+                <div class="loading-spinner"></div>
+                <p>Memuat aktivitas...</p>
+            </div>
+        `;
+        
+        // Get recent movies (upload activity)
+        const { data: recentMovies, error: moviesError } = await supabase
+            .from('movies')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(5);
+            
+        // Get recent likes
+        const { data: recentLikes, error: likesError } = await supabase
+            .from('likes')
+            .select('*, movies(title)')
+            .order('created_at', { ascending: false })
+            .limit(5);
+            
+        if (moviesError || likesError) throw moviesError || likesError;
+        
+        // Combine and sort activities
+        const activities = [];
+        
+        // Add movie uploads
+        recentMovies?.forEach(movie => {
+            activities.push({
+                type: 'upload',
+                text: `Film "${movie.title}" diupload`,
+                time: movie.created_at,
+                icon: 'upload'
+            });
+        });
+        
+        // Add likes
+        recentLikes?.forEach(like => {
+            activities.push({
+                type: 'like',
+                text: `User menyukai "${like.movies?.title || 'film'}"`,
+                time: like.created_at,
+                icon: 'like'
+            });
+        });
+        
+        // Sort by time and take top 10
+        activities.sort((a, b) => new Date(b.time) - new Date(a.time));
+        const recentActivities = activities.slice(0, 10);
+        
+        // Display activities
+        if (recentActivities.length === 0) {
+            elements.activityList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <p>Belum ada aktivitas</p>
+                </div>
+            `;
+            return;
+        }
+        
+        elements.activityList.innerHTML = recentActivities.map(activity => `
+            <div class="activity-item">
+                <div class="activity-icon ${activity.icon}">
+                    ${getActivityIcon(activity.icon)}
+                </div>
+                <div class="activity-content">
+                    <div class="activity-text">${activity.text}</div>
+                    <div class="activity-time">${formatTime(activity.time)}</div>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading recent activity:', error);
+        elements.activityList.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">❌</div>
+                <p>Gagal memuat aktivitas</p>
+            </div>
+        `;
+    }
+}
+
+// Load top movies
+async function loadTopMovies() {
+    try {
+        elements.topMoviesList.innerHTML = `
+            <div class="loading-movies">
+                <div class="loading-spinner"></div>
+                <p>Memuat film...</p>
+            </div>
+        `;
+        
+        const { data: topMovies, error } = await supabase
+            .from('movies')
+            .select('*')
+            .order('views', { ascending: false })
+            .limit(5);
+            
+        if (error) throw error;
+        
+        if (!topMovies || topMovies.length === 0) {
+            elements.topMoviesList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">🎬</div>
+                    <p>Belum ada film</p>
+                </div>
+            `;
+            return;
+        }
+        
+        elements.topMoviesList.innerHTML = topMovies.map((movie, index) => `
+            <div class="top-movie-item" onclick="viewMovie('${movie.id}')">
+                <div class="movie-rank rank-${index + 1}">${index + 1}</div>
+                <img src="${movie.thumbnail_url || 'https://placehold.co/50x70?text=No+Image'}" 
+                     alt="${movie.title}"
+                     class="movie-thumbnail"
+                     onerror="this.src='https://placehold.co/50x70?text=No+Image'">
+                <div class="movie-info">
+                    <div class="movie-title">${movie.title}</div>
+                    <div class="movie-stats">
+                        <span>👁️ ${movie.views || 0}</span>
+                        <span>👍 ${movie.likes || 0}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading top movies:', error);
+        elements.topMoviesList.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">❌</div>
+                <p>Gagal memuat film</p>
+            </div>
+        `;
+    }
+}
+
+// ===============================
+// UPLOAD FUNCTIONS
+// ===============================
 
 // Handle thumbnail URL input
 function handleThumbnailUrlInput() {
     const url = elements.thumbnailUrl.value.trim();
     
     if (url) {
-        // Jika URL diisi, reset file upload
         currentThumbnailFile = null;
         elements.uploadPlaceholder.classList.remove('hidden');
         elements.uploadPreview.classList.add('hidden');
         elements.thumbnailPreview.src = '';
         
-        // Validasi URL gambar
         if (isValidImageUrl(url)) {
             elements.thumbnailUrl.style.borderColor = '#28a745';
         } else {
@@ -139,10 +647,6 @@ function isValidImageUrl(url) {
     const imageRegex = /\.(jpeg|jpg|png|webp|gif|bmp)(\?.*)?$/i;
     return imageRegex.test(url) || url.includes('images.unsplash.com') || url.includes('placehold.co');
 }
-
-// ===============================
-// FUNGSI UTAMA
-// ===============================
 
 // Handle form submission
 async function handleFormSubmit(e) {
@@ -242,7 +746,7 @@ function generateThumbnailUrl(videoUrl, movieTitle = "") {
         }
     }
     
-    // Supabase Storage - coba generate placeholder
+    // Supabase Storage
     if (videoUrl.includes("supabase.co/storage/v1/object/public/videos/")) {
         const videoName = videoUrl.split('/').pop();
         return `https://placehold.co/400x225/667eea/ffffff?text=${encodeURIComponent(videoName.split('.')[0] || 'Video')}`;
@@ -258,7 +762,6 @@ function handleThumbnailUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Reset URL input jika file diupload
     elements.thumbnailUrl.value = '';
     elements.thumbnailUrl.style.borderColor = '#ddd';
     
@@ -293,7 +796,6 @@ function handleEditThumbnailUpload(movieId, event) {
     const file = event.target.files[0];
     if (!file) return;
     
-    // Reset URL input untuk edit form
     const urlInput = document.getElementById(`edit-thumbnail-url-${movieId}`);
     if (urlInput) {
         urlInput.value = '';
@@ -339,7 +841,6 @@ function handleEditThumbnailUrlInput(movieId) {
     const url = urlInput.value.trim();
     
     if (url) {
-        // Jika URL diisi, reset file upload
         delete editThumbnailFiles[movieId];
         const placeholder = document.getElementById(`edit-upload-placeholder-${movieId}`);
         const previewContainer = document.getElementById(`edit-upload-preview-${movieId}`);
@@ -349,7 +850,6 @@ function handleEditThumbnailUrlInput(movieId) {
             previewContainer.classList.add('hidden');
         }
         
-        // Validasi URL
         if (isValidImageUrl(url)) {
             urlInput.style.borderColor = '#28a745';
         } else {
@@ -377,7 +877,6 @@ function handleDrop(e) {
     
     const files = e.dataTransfer.files;
     if (files.length > 0) {
-        // Reset URL input
         elements.thumbnailUrl.value = '';
         elements.thumbnailUrl.style.borderColor = '#ddd';
         
@@ -411,7 +910,6 @@ function handleEditDrop(movieId, event) {
     
     const files = event.dataTransfer.files;
     if (files.length > 0) {
-        // Reset URL input untuk edit form
         const urlInput = document.getElementById(`edit-thumbnail-url-${movieId}`);
         if (urlInput) {
             urlInput.value = '';
@@ -429,7 +927,6 @@ async function uploadMovie() {
     try {
         let thumbnailUrl = '';
         
-        // Prioritaskan file upload daripada URL
         if (currentThumbnailFile) {
             thumbnailUrl = await uploadThumbnail();
             if (!thumbnailUrl) {
@@ -438,11 +935,9 @@ async function uploadMovie() {
         } else if (elements.thumbnailUrl.value.trim()) {
             thumbnailUrl = elements.thumbnailUrl.value.trim();
         } else {
-            // Jika tidak ada thumbnail yang diupload, generate dari URL video
             const videoUrl = elements.videoUrl.value.trim();
             const movieTitle = elements.movieTitle.value.trim();
             thumbnailUrl = generateThumbnailUrl(videoUrl, movieTitle);
-            console.log('Generated thumbnail URL:', thumbnailUrl);
         }
         
         const movieData = {
@@ -632,7 +1127,6 @@ function displayMoviesList(movies) {
                                         <small>Thumbnail Saat Ini</small>
                                     </div>
                                     <div class="edit-thumbnail-upload">
-                                        <!-- Opsi Upload File -->
                                         <div class="edit-upload-area" id="edit-upload-area-${movie.id}">
                                             <input 
                                                 type="file" 
@@ -652,7 +1146,6 @@ function displayMoviesList(movies) {
                                             </div>
                                         </div>
                                         
-                                        <!-- Opsi URL Gambar -->
                                         <div class="form-group" style="margin-top: 12px;">
                                             <label>Atau Masukkan URL Gambar Baru</label>
                                             <input 
@@ -761,7 +1254,6 @@ async function handleEditSubmit(event, movieId) {
         return;
     }
     
-    // Handle thumbnail update
     const thumbnailUrlInput = document.getElementById(`edit-thumbnail-url-${movieId}`);
     if (thumbnailUrlInput && thumbnailUrlInput.value.trim()) {
         if (!isValidImageUrl(thumbnailUrlInput.value.trim())) {
@@ -775,7 +1267,6 @@ async function handleEditSubmit(event, movieId) {
             updateData.thumbnail_url = thumbnailUrl;
         }
     } else {
-        // Jika tidak ada thumbnail baru yang diupload, generate dari URL video
         const movie = allMovies.find(m => m.id === movieId);
         if (movie) {
             updateData.thumbnail_url = generateThumbnailUrl(updateData.video_url, updateData.title);
@@ -873,7 +1364,87 @@ function disableForm(disabled) {
     }
 }
 
-// Show/hide loading
+// ===============================
+// UTILITY FUNCTIONS
+// ===============================
+
+// Tab Navigation Functions
+function showSection(sectionName) {
+    // Hide all sections
+    document.querySelectorAll('.dashboard-section').forEach(section => {
+        section.classList.remove('active');
+    });
+    
+    // Show selected section
+    document.getElementById(sectionName).classList.add('active');
+    
+    // Update active tab
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Set active tab based on section
+    if (sectionName === 'dashboard') {
+        document.querySelector('.tab-btn').classList.add('active');
+    } else if (sectionName === 'upload') {
+        document.querySelectorAll('.tab-btn')[1].classList.add('active');
+    }
+    
+    // Load data if needed
+    if (sectionName === 'dashboard') {
+        loadDashboardData();
+    } else if (sectionName === 'upload') {
+        loadMoviesList();
+    }
+}
+
+// Logout function
+async function logout() {
+    try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        window.location.href = 'login.html';
+    } catch (error) {
+        console.error('Error logging out:', error);
+        showError('Gagal logout');
+    }
+}
+
+// Manage users (placeholder)
+function manageUsers() {
+    showError('Fitur kelola user akan segera hadir');
+}
+
+function getActivityIcon(type) {
+    const icons = {
+        upload: '📤',
+        view: '👁️',
+        like: '👍',
+        user: '👤'
+    };
+    return icons[type] || '📊';
+}
+
+function formatTime(timestamp) {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Baru saja';
+    if (diffMins < 60) return `${diffMins} menit lalu`;
+    if (diffHours < 24) return `${diffHours} jam lalu`;
+    if (diffDays === 1) return 'Kemarin';
+    if (diffDays < 7) return `${diffDays} hari lalu`;
+    
+    return date.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short'
+    });
+}
+
 function showLoading() {
     elements.loadingOverlay.classList.remove('hidden');
 }
@@ -882,7 +1453,6 @@ function hideLoading() {
     elements.loadingOverlay.classList.add('hidden');
 }
 
-// Show/hide popup
 function showPopup(type) {
     elements[`${type}Popup`].classList.remove('hidden');
 }
@@ -891,19 +1461,21 @@ function hidePopup(type) {
     elements[`${type}Popup`].classList.add('hidden');
 }
 
-// Show success message
 function showSuccess(message) {
     elements.successMessage.textContent = message;
     showPopup('success');
 }
 
-// Show error message
 function showError(message) {
     elements.errorMessage.textContent = message;
     showPopup('error');
 }
 
 // Export functions ke global scope
+window.showSection = showSection;
+window.logout = logout;
+window.manageUsers = manageUsers;
+window.redirectToHome = redirectToHome;
 window.handleEditSubmit = handleEditSubmit;
 window.viewMovie = viewMovie;
 window.startEdit = startEdit;

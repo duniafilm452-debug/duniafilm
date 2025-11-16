@@ -264,7 +264,7 @@ function updateAuthUI(isLoggedIn) {
 
 // 🔗 Redirect ke halaman login
 function redirectToLogin() {
-    window.location.href = 'loginuser.html';
+    window.location.href = 'login.html';
 }
 
 // 🔗 Redirect ke halaman riwayat lengkap

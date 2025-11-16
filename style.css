@@ -69,72 +69,6 @@ body {
   font-size: 1rem;
 }
 
-/* Ad Containers */
-.ad-container {
-  background: #1a1a1a;
-  border-radius: 8px;
-  margin: 10px auto;
-  overflow: hidden;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-}
-
-.ad-top-banner {
-  max-width: 1200px;
-  height: 90px;
-  margin: 10px auto;
-}
-
-.ad-in-article {
-  max-width: 1200px;
-  height: 250px;
-  margin: 20px auto;
-}
-
-.ad-sticky-bottom {
-  position: fixed;
-  bottom: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 320px;
-  height: 50px;
-  background: #2d2d2d;
-  border: 1px solid #444;
-  z-index: 99;
-  display: none; /* Default hidden, akan ditampilkan setelah delay */
-}
-
-.ad-close-btn {
-  position: absolute;
-  top: -10px;
-  right: -10px;
-  background: #ff4444;
-  color: white;
-  border: none;
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ad-label {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  background: rgba(0,0,0,0.7);
-  color: #ccc;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.6rem;
-  z-index: 1;
-}
-
 /* Categories Section */
 .categories-section {
   padding: 20px 0 10px;
@@ -500,21 +434,6 @@ body {
     font-size: 0.55rem;
     padding: 3px 6px;
   }
-
-  .ad-top-banner {
-    height: 70px;
-    margin: 8px auto;
-  }
-
-  .ad-in-article {
-    height: 200px;
-    margin: 15px auto;
-  }
-
-  .ad-sticky-bottom {
-    width: 280px;
-    height: 45px;
-  }
 }
 
 @media (max-width: 480px) {
@@ -567,22 +486,6 @@ body {
     font-size: 0.5rem;
     padding: 2px 4px;
   }
-
-  .ad-top-banner {
-    height: 60px;
-    margin: 5px auto;
-  }
-
-  .ad-in-article {
-    height: 150px;
-    margin: 10px auto;
-  }
-
-  .ad-sticky-bottom {
-    width: 250px;
-    height: 40px;
-    bottom: 65px;
-  }
 }
 
 @media (max-width: 360px) {
@@ -593,10 +496,5 @@ body {
   
   .search-box {
     width: 150px;
-  }
-
-  .ad-sticky-bottom {
-    width: 220px;
-    height: 35px;
   }
 }
