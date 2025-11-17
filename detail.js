@@ -15,6 +15,7 @@ const favBtn = document.getElementById("fav-btn");
 const shareBtn = document.getElementById("share-btn");
 const likeCount = document.getElementById("like-count");
 const recommendList = document.getElementById("recommend-list");
+const toggleDescBtn = document.getElementById("toggle-desc-btn");
 
 // Elemen baru untuk episode
 const episodesTab = document.getElementById("episodes-tab");
@@ -30,7 +31,7 @@ const popupLogin = document.getElementById("popup-login");
 
 // Data aplikasi
 const params = new URLSearchParams(window.location.search);
-const movieId = params.get("id");
+const movieSlug = params.get("slug"); // Ubah dari "id" menjadi "slug"
 let currentUser = null;
 let currentMovie = null;
 let hasIncrementedViews = false;
@@ -87,6 +88,11 @@ function setupEventListeners() {
         videoPlayer.addEventListener('error', handleVideoError);
     }
 
+    // Toggle description
+    if (toggleDescBtn) {
+        toggleDescBtn.onclick = toggleDescription;
+    }
+
     // Auth state changes
     supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session) {
@@ -107,46 +113,47 @@ function setupEventListeners() {
 // FUNGSI UTAMA
 // ===============================
 
-// Load movie data
+// Generate slug dari judul
+function generateSlug(title) {
+    return title
+        .toLowerCase()
+        .replace(/[^\w ]+/g, '')
+        .replace(/ +/g, '-');
+}
+
+// Load movie data by slug
 async function loadMovie() {
-    if (!movieId) {
-        showError('ID film tidak ditemukan');
+    if (!movieSlug) {
+        showError('Slug film tidak ditemukan');
         return;
     }
 
     try {
+        // Cari film berdasarkan slug
         const { data, error } = await supabase
             .from("movies")
             .select("*")
-            .eq("id", movieId)
+            .eq("slug", movieSlug) // Gunakan kolom slug
             .single();
 
         if (error) {
             console.error('Error loading movie:', error);
-            showError('Gagal memuat data film');
+            // Fallback: coba cari berdasarkan ID jika slug tidak ditemukan
+            await loadMovieFallback();
             return;
         }
 
         if (!data) {
-            showError('Film tidak ditemukan');
+            // Fallback: coba cari berdasarkan ID
+            await loadMovieFallback();
             return;
         }
 
         currentMovie = data;
-        if (titleBelowEl) titleBelowEl.textContent = data.title;
-        if (descEl) descEl.textContent = data.description || "Tidak ada deskripsi.";
-
-        // Update view count display
-        if (viewCount) {
-            viewCount.textContent = `👁️ ${data.views || 0} tayangan`;
-        }
-
-        // Process video URL
-        let videoUrl = data.video_url;
-        videoUrl = processVideoUrl(videoUrl);
+        displayMovieData();
         
-        console.log('Video URL:', videoUrl);
-        if (videoPlayer) videoPlayer.src = videoUrl;
+        // Update URL dengan slug yang benar (jika ada perubahan)
+        updateBrowserURL();
 
         await Promise.all([
             checkLikeStatus(),
@@ -166,6 +173,123 @@ async function loadMovie() {
     } catch (error) {
         console.error('Exception in loadMovie:', error);
         showError('Terjadi kesalahan saat memuat film');
+    }
+}
+
+// Fallback: load movie by ID (untuk kompatibilitas dengan link lama)
+async function loadMovieFallback() {
+    const movieId = params.get("id");
+    if (!movieId) {
+        showError('Film tidak ditemukan');
+        return;
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from("movies")
+            .select("*")
+            .eq("id", movieId)
+            .single();
+
+        if (error) throw error;
+
+        if (!data) {
+            showError('Film tidak ditemukan');
+            return;
+        }
+
+        currentMovie = data;
+        displayMovieData();
+        
+        // Redirect ke URL dengan slug
+        redirectToSlugURL();
+
+    } catch (error) {
+        console.error('Error in loadMovieFallback:', error);
+        showError('Gagal memuat data film');
+    }
+}
+
+// Display movie data
+function displayMovieData() {
+    if (titleBelowEl) titleBelowEl.textContent = currentMovie.title;
+    
+    // Set description dengan toggle functionality
+    if (descEl) {
+        descEl.textContent = currentMovie.description || "Tidak ada deskripsi.";
+        checkDescriptionLength();
+    }
+
+    // Update view count display
+    if (viewCount) {
+        viewCount.textContent = `👁️ ${currentMovie.views || 0} tayangan`;
+    }
+
+    // Process video URL
+    let videoUrl = currentMovie.video_url;
+    videoUrl = processVideoUrl(videoUrl);
+    
+    console.log('Video URL:', videoUrl);
+    if (videoPlayer) videoPlayer.src = videoUrl;
+}
+
+// Redirect ke URL dengan slug
+function redirectToSlugURL() {
+    const slug = generateSlug(currentMovie.title);
+    const newURL = `${window.location.origin}${window.location.pathname}?slug=${slug}`;
+    
+    // Ganti URL tanpa reload halaman (untuk UX yang lebih baik)
+    if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, '', newURL);
+    }
+}
+
+// Update browser URL dengan slug
+function updateBrowserURL() {
+    const currentSlug = params.get("slug");
+    const correctSlug = generateSlug(currentMovie.title);
+    
+    if (currentSlug !== correctSlug) {
+        const newURL = `${window.location.origin}${window.location.pathname}?slug=${correctSlug}`;
+        if (window.history && window.history.replaceState) {
+            window.history.replaceState({}, '', newURL);
+        }
+    }
+}
+
+// Check description length and show/hide toggle button
+function checkDescriptionLength() {
+    if (!descEl || !toggleDescBtn) return;
+    
+    // Reset untuk mengukur ulang
+    descEl.classList.remove('description-collapsed');
+    toggleDescBtn.classList.add('hidden');
+    
+    // Gunakan setTimeout untuk memastikan DOM sudah dirender
+    setTimeout(() => {
+        const lineHeight = parseInt(getComputedStyle(descEl).lineHeight);
+        const maxHeight = lineHeight * 2; // Maksimal 2 baris
+        
+        if (descEl.scrollHeight > maxHeight) {
+            descEl.classList.add('description-collapsed');
+            toggleDescBtn.classList.remove('hidden');
+            toggleDescBtn.textContent = 'Selengkapnya';
+        }
+    }, 100);
+}
+
+// Toggle description visibility
+function toggleDescription() {
+    if (!descEl || !toggleDescBtn) return;
+    
+    if (descEl.classList.contains('description-collapsed')) {
+        // Tampilkan semua deskripsi
+        descEl.classList.remove('description-collapsed');
+        toggleDescBtn.textContent = 'Sembunyikan';
+    } else {
+        // Sembunyikan deskripsi (hanya 2 baris)
+        descEl.classList.add('description-collapsed');
+        toggleDescBtn.textContent = 'Selengkapnya';
     }
 }
 
@@ -242,7 +366,9 @@ function processVideoUrl(videoUrl) {
 
 // Update view count - FIXED VERSION
 async function updateViewCount() {
-    if (!movieId || hasIncrementedViews) return;
+    if (!currentMovie || hasIncrementedViews) return;
+    
+    const movieId = currentMovie.id;
     
     try {
         // Cek session storage untuk mencegah multiple increments
@@ -320,14 +446,14 @@ async function updateViewCount() {
 
 // Record watch history
 async function recordWatchHistory() {
-    if (!currentUser || !movieId) return;
+    if (!currentUser || !currentMovie) return;
     
     try {
         await supabase
             .from("watch_history")
             .upsert({
                 user_id: currentUser.id,
-                movie_id: movieId,
+                movie_id: currentMovie.id,
                 last_watched: new Date().toISOString()
             });
     } catch (error) {
@@ -337,7 +463,7 @@ async function recordWatchHistory() {
 
 // Handle like
 async function handleLike() {
-    if (!currentUser) {
+    if (!currentUser || !currentMovie) {
         showLoginPopup("menyukai film");
         return;
     }
@@ -346,7 +472,7 @@ async function handleLike() {
         const { data: existingLike } = await supabase
             .from("likes")
             .select("id")
-            .eq("movie_id", movieId)
+            .eq("movie_id", currentMovie.id)
             .eq("user_id", currentUser.id)
             .single();
             
@@ -356,7 +482,7 @@ async function handleLike() {
             showSuccessPopup('Like dihapus');
         } else {
             await supabase.from("likes").insert({
-                movie_id: movieId,
+                movie_id: currentMovie.id,
                 user_id: currentUser.id
             });
             if (likeBtn) likeBtn.classList.add("liked");
@@ -373,7 +499,7 @@ async function handleLike() {
 
 // Handle favorite
 async function handleFavorite() {
-    if (!currentUser) {
+    if (!currentUser || !currentMovie) {
         showLoginPopup("menambah favorit");
         return;
     }
@@ -382,7 +508,7 @@ async function handleFavorite() {
         const { data: existingFav } = await supabase
             .from("favorites")
             .select("id")
-            .eq("movie_id", movieId)
+            .eq("movie_id", currentMovie.id)
             .eq("user_id", currentUser.id)
             .single();
             
@@ -392,7 +518,7 @@ async function handleFavorite() {
             showSuccessPopup('Dihapus dari favorit');
         } else {
             await supabase.from("favorites").insert({
-                movie_id: movieId,
+                movie_id: currentMovie.id,
                 user_id: currentUser.id
             });
             if (favBtn) favBtn.classList.add("favorited");
@@ -405,9 +531,9 @@ async function handleFavorite() {
     }
 }
 
-// Handle share
+// Handle share - UPDATED untuk menggunakan slug
 function handleShare() {
-    const shareUrl = window.location.href;
+    const shareUrl = generateShareURL();
     const shareText = `Tonton "${currentMovie?.title || 'Film Menarik'}" di Dunia Film`;
     
     if (navigator.share) {
@@ -423,6 +549,14 @@ function handleShare() {
     }
 }
 
+// Generate share URL dengan slug
+function generateShareURL() {
+    if (!currentMovie) return window.location.href;
+    
+    const slug = generateSlug(currentMovie.title);
+    return `${window.location.origin}${window.location.pathname}?slug=${slug}`;
+}
+
 // Fallback share
 function fallbackShare(url) {
     navigator.clipboard.writeText(url).then(() => {
@@ -434,7 +568,7 @@ function fallbackShare(url) {
 
 // Check like status
 async function checkLikeStatus() {
-    if (!currentUser || !movieId) {
+    if (!currentUser || !currentMovie) {
         if (likeBtn) likeBtn.classList.remove("liked");
         return;
     }
@@ -443,7 +577,7 @@ async function checkLikeStatus() {
         const { data } = await supabase
             .from("likes")
             .select("id")
-            .eq("movie_id", movieId)
+            .eq("movie_id", currentMovie.id)
             .eq("user_id", currentUser.id)
             .single();
             
@@ -462,7 +596,7 @@ async function checkLikeStatus() {
 
 // Check favorite status
 async function checkFavoriteStatus() {
-    if (!currentUser || !movieId) {
+    if (!currentUser || !currentMovie) {
         if (favBtn) favBtn.classList.remove("favorited");
         return;
     }
@@ -471,7 +605,7 @@ async function checkFavoriteStatus() {
         const { data } = await supabase
             .from("favorites")
             .select("id")
-            .eq("movie_id", movieId)
+            .eq("movie_id", currentMovie.id)
             .eq("user_id", currentUser.id)
             .single();
             
@@ -488,13 +622,13 @@ async function checkFavoriteStatus() {
 
 // Update like count
 async function updateLikeCount() {
-    if (!movieId) return;
+    if (!currentMovie) return;
     
     try {
         const { count } = await supabase
             .from("likes")
             .select("*", { count: "exact", head: true })
-            .eq("movie_id", movieId);
+            .eq("movie_id", currentMovie.id);
             
         if (likeCount) likeCount.textContent = count || 0;
         
@@ -509,7 +643,7 @@ async function updateLikeCount() {
 
 // Load episodes
 async function loadEpisodes() {
-    if (!movieId || !currentMovie) return;
+    if (!currentMovie) return;
     
     try {
         if (episodesList) episodesList.innerHTML = '<div class="loading-episodes">Memuat episode...</div>';
@@ -586,7 +720,7 @@ function extractEpisodeNumber(title) {
     return null;
 }
 
-// Render episodes
+// Render episodes - UPDATED untuk menggunakan slug
 function renderEpisodes(episodes) {
     if (!episodesList) return;
     
@@ -597,11 +731,12 @@ function renderEpisodes(episodes) {
     
     episodesList.innerHTML = episodes.map(movie => {
         const episodeNumber = extractEpisodeNumber(movie.title);
-        const isCurrentEpisode = movie.id === parseInt(movieId);
+        const isCurrentEpisode = movie.id === currentMovie.id;
+        const slug = generateSlug(movie.title);
         
         return `
             <div class="episode-item ${isCurrentEpisode ? 'current' : ''}" 
-                 onclick="location.href='detail.html?id=${movie.id}'">
+                 onclick="location.href='detail.html?slug=${slug}'">
                 <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}" 
                      alt="${movie.title}" 
                      onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'"
@@ -625,7 +760,7 @@ function renderEpisodes(episodes) {
 
 // Load recommendations - RANDOM VERSION
 async function loadRecommendations() {
-    if (!movieId) return;
+    if (!currentMovie) return;
     
     try {
         if (recommendList) recommendList.innerHTML = '<div class="loading-recommendations">Memuat rekomendasi...</div>';
@@ -634,7 +769,7 @@ async function loadRecommendations() {
         const { data: randomMovies, error } = await supabase
             .from("movies")
             .select("*")
-            .neq("id", movieId)
+            .neq("id", currentMovie.id)
             .limit(40);
             
         if (error) throw error;
@@ -674,7 +809,7 @@ function shuffleArray(array) {
     return newArray;
 }
 
-// Render recommendations
+// Render recommendations - UPDATED untuk menggunakan slug
 function renderRecommendations(movies) {
     if (!recommendList) return;
     
@@ -684,8 +819,11 @@ function renderRecommendations(movies) {
     }
     
     // Tampilkan video dengan grid yang responsive
-    recommendList.innerHTML = movies.map(movie => `
-        <div class="recommend-item" onclick="location.href='detail.html?id=${movie.id}'">
+    recommendList.innerHTML = movies.map(movie => {
+        const slug = generateSlug(movie.title);
+        
+        return `
+        <div class="recommend-item" onclick="location.href='detail.html?slug=${slug}'">
             <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}" 
                  alt="${movie.title}" 
                  onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'"
@@ -698,7 +836,7 @@ function renderRecommendations(movies) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 // ===============================
