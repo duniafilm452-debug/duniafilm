@@ -31,7 +31,7 @@ const popupLogin = document.getElementById("popup-login");
 
 // Data aplikasi
 const params = new URLSearchParams(window.location.search);
-const movieSlug = params.get("slug"); // Ubah dari "id" menjadi "slug"
+const movieId = params.get("id"); // Kembali menggunakan ID
 let currentUser = null;
 let currentMovie = null;
 let hasIncrementedViews = false;
@@ -113,47 +113,33 @@ function setupEventListeners() {
 // FUNGSI UTAMA
 // ===============================
 
-// Generate slug dari judul
-function generateSlug(title) {
-    return title
-        .toLowerCase()
-        .replace(/[^\w ]+/g, '')
-        .replace(/ +/g, '-');
-}
-
-// Load movie data by slug
+// Load movie data by ID
 async function loadMovie() {
-    if (!movieSlug) {
-        showError('Slug film tidak ditemukan');
+    if (!movieId) {
+        showError('ID film tidak ditemukan');
         return;
     }
 
     try {
-        // Cari film berdasarkan slug
         const { data, error } = await supabase
             .from("movies")
             .select("*")
-            .eq("slug", movieSlug) // Gunakan kolom slug
+            .eq("id", movieId)
             .single();
 
         if (error) {
             console.error('Error loading movie:', error);
-            // Fallback: coba cari berdasarkan ID jika slug tidak ditemukan
-            await loadMovieFallback();
+            showError('Gagal memuat data film');
             return;
         }
 
         if (!data) {
-            // Fallback: coba cari berdasarkan ID
-            await loadMovieFallback();
+            showError('Film tidak ditemukan');
             return;
         }
 
         currentMovie = data;
         displayMovieData();
-        
-        // Update URL dengan slug yang benar (jika ada perubahan)
-        updateBrowserURL();
 
         await Promise.all([
             checkLikeStatus(),
@@ -173,40 +159,6 @@ async function loadMovie() {
     } catch (error) {
         console.error('Exception in loadMovie:', error);
         showError('Terjadi kesalahan saat memuat film');
-    }
-}
-
-// Fallback: load movie by ID (untuk kompatibilitas dengan link lama)
-async function loadMovieFallback() {
-    const movieId = params.get("id");
-    if (!movieId) {
-        showError('Film tidak ditemukan');
-        return;
-    }
-
-    try {
-        const { data, error } = await supabase
-            .from("movies")
-            .select("*")
-            .eq("id", movieId)
-            .single();
-
-        if (error) throw error;
-
-        if (!data) {
-            showError('Film tidak ditemukan');
-            return;
-        }
-
-        currentMovie = data;
-        displayMovieData();
-        
-        // Redirect ke URL dengan slug
-        redirectToSlugURL();
-
-    } catch (error) {
-        console.error('Error in loadMovieFallback:', error);
-        showError('Gagal memuat data film');
     }
 }
 
@@ -231,30 +183,6 @@ function displayMovieData() {
     
     console.log('Video URL:', videoUrl);
     if (videoPlayer) videoPlayer.src = videoUrl;
-}
-
-// Redirect ke URL dengan slug
-function redirectToSlugURL() {
-    const slug = generateSlug(currentMovie.title);
-    const newURL = `${window.location.origin}${window.location.pathname}?slug=${slug}`;
-    
-    // Ganti URL tanpa reload halaman (untuk UX yang lebih baik)
-    if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, '', newURL);
-    }
-}
-
-// Update browser URL dengan slug
-function updateBrowserURL() {
-    const currentSlug = params.get("slug");
-    const correctSlug = generateSlug(currentMovie.title);
-    
-    if (currentSlug !== correctSlug) {
-        const newURL = `${window.location.origin}${window.location.pathname}?slug=${correctSlug}`;
-        if (window.history && window.history.replaceState) {
-            window.history.replaceState({}, '', newURL);
-        }
-    }
 }
 
 // Check description length and show/hide toggle button
@@ -531,9 +459,9 @@ async function handleFavorite() {
     }
 }
 
-// Handle share - UPDATED untuk menggunakan slug
+// Handle share - menggunakan ID seperti semula
 function handleShare() {
-    const shareUrl = generateShareURL();
+    const shareUrl = window.location.href;
     const shareText = `Tonton "${currentMovie?.title || 'Film Menarik'}" di Dunia Film`;
     
     if (navigator.share) {
@@ -547,14 +475,6 @@ function handleShare() {
     } else {
         fallbackShare(shareUrl);
     }
-}
-
-// Generate share URL dengan slug
-function generateShareURL() {
-    if (!currentMovie) return window.location.href;
-    
-    const slug = generateSlug(currentMovie.title);
-    return `${window.location.origin}${window.location.pathname}?slug=${slug}`;
 }
 
 // Fallback share
@@ -720,7 +640,7 @@ function extractEpisodeNumber(title) {
     return null;
 }
 
-// Render episodes - UPDATED untuk menggunakan slug
+// Render episodes - menggunakan struktur 9:16 dengan judul di bawah
 function renderEpisodes(episodes) {
     if (!episodesList) return;
     
@@ -732,15 +652,16 @@ function renderEpisodes(episodes) {
     episodesList.innerHTML = episodes.map(movie => {
         const episodeNumber = extractEpisodeNumber(movie.title);
         const isCurrentEpisode = movie.id === currentMovie.id;
-        const slug = generateSlug(movie.title);
         
         return `
             <div class="episode-item ${isCurrentEpisode ? 'current' : ''}" 
-                 onclick="location.href='detail.html?slug=${slug}'">
-                <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}" 
-                     alt="${movie.title}" 
-                     onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'"
-                     loading="lazy">
+                 onclick="location.href='detail.html?id=${movie.id}'">
+                <div class="episode-thumbnail-container">
+                    <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x355?text=No+Thumbnail'}" 
+                         alt="${movie.title}" 
+                         onerror="this.src='https://via.placeholder.com/200x355?text=No+Thumbnail'"
+                         loading="lazy">
+                </div>
                 <div class="episode-info">
                     <div class="episode-number">${episodeNumber ? `Episode ${episodeNumber}` : 'Episode'}</div>
                     <p class="episode-title">${escapeHtml(movie.title)}</p>
@@ -809,7 +730,7 @@ function shuffleArray(array) {
     return newArray;
 }
 
-// Render recommendations - UPDATED untuk menggunakan slug
+// Render recommendations - menggunakan struktur 9:16 dengan judul di bawah
 function renderRecommendations(movies) {
     if (!recommendList) return;
     
@@ -819,15 +740,14 @@ function renderRecommendations(movies) {
     }
     
     // Tampilkan video dengan grid yang responsive
-    recommendList.innerHTML = movies.map(movie => {
-        const slug = generateSlug(movie.title);
-        
-        return `
-        <div class="recommend-item" onclick="location.href='detail.html?slug=${slug}'">
-            <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}" 
-                 alt="${movie.title}" 
-                 onerror="this.src='https://via.placeholder.com/200x120?text=No+Thumbnail'"
-                 loading="lazy">
+    recommendList.innerHTML = movies.map(movie => `
+        <div class="recommend-item" onclick="location.href='detail.html?id=${movie.id}'">
+            <div class="recommend-thumbnail-container">
+                <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x355?text=No+Thumbnail'}" 
+                     alt="${movie.title}" 
+                     onerror="this.src='https://via.placeholder.com/200x355?text=No+Thumbnail'"
+                     loading="lazy">
+            </div>
             <div class="recommend-info">
                 <p class="recommend-title-text">${escapeHtml(movie.title)}</p>
                 <div class="recommend-meta">
@@ -836,7 +756,7 @@ function renderRecommendations(movies) {
                 </div>
             </div>
         </div>
-    `}).join('');
+    `).join('');
 }
 
 // ===============================
