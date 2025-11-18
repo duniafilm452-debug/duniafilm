@@ -182,7 +182,61 @@ function displayMovieData() {
     videoUrl = processVideoUrl(videoUrl);
     
     console.log('Video URL:', videoUrl);
-    if (videoPlayer) videoPlayer.src = videoUrl;
+    
+    // Set video source berdasarkan jenis URL
+    if (videoUrl.includes('youtube.com/embed') || videoUrl.includes('drive.google.com')) {
+        // Gunakan iframe untuk YouTube dan Google Drive
+        if (videoPlayer) {
+            videoPlayer.src = videoUrl;
+            videoPlayer.style.display = 'block';
+        }
+    } else {
+        // Gunakan HTML5 video player untuk Wasabi dan lainnya
+        replaceIframeWithVideoPlayer(videoUrl);
+    }
+}
+
+// Replace iframe dengan HTML5 video player untuk Wasabi
+function replaceIframeWithVideoPlayer(videoUrl) {
+    if (!videoPlayer) return;
+    
+    const videoContainer = videoPlayer.parentElement;
+    const newVideoPlayer = document.createElement('video');
+    
+    newVideoPlayer.id = 'video-player';
+    newVideoPlayer.controls = true;
+    newVideoPlayer.style.width = '100%';
+    newVideoPlayer.style.height = '100%';
+    newVideoPlayer.style.position = 'absolute';
+    newVideoPlayer.style.top = '0';
+    newVideoPlayer.style.left = '0';
+    newVideoPlayer.style.borderRadius = '12px';
+    
+    // Add source element
+    const source = document.createElement('source');
+    source.src = videoUrl;
+    source.type = getVideoMimeType(videoUrl);
+    
+    newVideoPlayer.appendChild(source);
+    newVideoPlayer.innerHTML += 'Browser Anda tidak mendukung pemutar video.';
+    
+    // Replace iframe dengan video element
+    videoPlayer.replaceWith(newVideoPlayer);
+    
+    // Update event listeners untuk video element baru
+    newVideoPlayer.addEventListener('load', handleVideoLoad);
+    newVideoPlayer.addEventListener('play', handleVideoPlay);
+    newVideoPlayer.addEventListener('error', handleVideoError);
+    newVideoPlayer.addEventListener('loadeddata', handleVideoLoad);
+}
+
+// Get MIME type berdasarkan ekstensi file
+function getVideoMimeType(videoUrl) {
+    if (videoUrl.includes('.mp4')) return 'video/mp4';
+    if (videoUrl.includes('.webm')) return 'video/webm';
+    if (videoUrl.includes('.ogg')) return 'video/ogg';
+    if (videoUrl.includes('.mov')) return 'video/quicktime';
+    return 'video/mp4'; // default
 }
 
 // Check description length and show/hide toggle button
@@ -261,9 +315,11 @@ function handleVideoPlay() {
     }
 }
 
-// Process video URL untuk berbagai sumber
+// Process video URL untuk berbagai sumber - DIPERBARUI untuk Wasabi
 function processVideoUrl(videoUrl) {
     if (!videoUrl) return '';
+    
+    console.log('Processing video URL:', videoUrl);
     
     // YouTube URLs
     if (videoUrl.includes("youtube.com/watch?v=")) {
@@ -283,6 +339,12 @@ function processVideoUrl(videoUrl) {
             return `https://drive.google.com/file/d/${fileId}/preview`;
         }
     } 
+    // Wasabi URLs - DITAMBAHKAN
+    else if (videoUrl.includes("wasabisys.com") || videoUrl.includes("s3.wasabisys.com")) {
+        // Wasabi URL langsung, return as-is untuk HTML5 video player
+        console.log('Wasabi video URL detected:', videoUrl);
+        return videoUrl;
+    }
     // Supabase Storage URLs
     else if (!videoUrl.startsWith("http")) {
         const { data: urlData } = supabase.storage.from("videos").getPublicUrl(videoUrl);
@@ -825,15 +887,16 @@ function showSuccessPopup(message) {
 
 // Handle video error
 function handleVideoError() {
-    if (!videoPlayer) return;
+    const videoElement = document.getElementById('video-player');
+    if (!videoElement) return;
     
     const errorMessage = `
-        <div style="text-align: center; padding: 40px; color: #666;">
+        <div style="text-align: center; padding: 40px; color: #666; background: #1a1a1a; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
             <div style="font-size: 3rem; margin-bottom: 15px;">📹</div>
-            <h3>Video Tidak Dapat Diputar</h3>
-            <p>Silakan coba beberapa saat lagi atau hubungi administrator.</p>
+            <h3 style="margin-bottom: 10px; color: #fff;">Video Tidak Dapat Diputar</h3>
+            <p style="margin-bottom: 20px;">Silakan coba beberapa saat lagi atau hubungi administrator.</p>
             <button onclick="location.reload()" style="
-                background: #667eea;
+                background: #ff0000;
                 color: white;
                 border: none;
                 padding: 10px 20px;
@@ -843,7 +906,12 @@ function handleVideoError() {
             ">Coba Lagi</button>
         </div>
     `;
-    videoPlayer.outerHTML = errorMessage;
+    
+    if (videoElement.tagName === 'IFRAME') {
+        videoElement.outerHTML = `<div class="yt-video-container">${errorMessage}</div>`;
+    } else {
+        videoElement.outerHTML = errorMessage;
+    }
 }
 
 // Utility functions

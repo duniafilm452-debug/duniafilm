@@ -54,6 +54,7 @@ body {
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  background: #000;
 }
 
 #video-player {
@@ -63,6 +64,18 @@ body {
   width: 100%;
   height: 100%;
   border: none;
+  background: #000;
+}
+
+/* Styling untuk HTML5 video player */
+.yt-video-container video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #000;
 }
 
 /* Video Info */
