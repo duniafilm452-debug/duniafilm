@@ -85,12 +85,48 @@ async function initializeApp() {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session) {
-        window.location.href = 'loginuser.html';
+        window.location.href = 'login.html';
+        return;
+    }
+
+    // CEK APAKAH USER ADALAH ADMIN
+    const isUserAdmin = await checkIfUserIsAdmin(session.user.id);
+    
+    if (!isUserAdmin) {
+        window.location.href = 'admin.html';
         return;
     }
 
     currentUser = session.user;
     await loadMovies();
+}
+
+// Fungsi untuk mengecek apakah user adalah admin
+async function checkIfUserIsAdmin(userId) {
+    try {
+        // Cek dari user metadata terlebih dahulu
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.user_metadata?.role === 'admin') {
+            return true;
+        }
+        
+        // Cek dari tabel profiles
+        const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', userId)
+            .single();
+            
+        if (error) {
+            console.error('Error checking admin status:', error);
+            return false;
+        }
+        
+        return profile?.role === 'admin';
+    } catch (error) {
+        console.error('Error in checkIfUserIsAdmin:', error);
+        return false;
+    }
 }
 
 // Setup event listeners
@@ -177,7 +213,7 @@ function applyFilters() {
     // Apply category filter
     if (currentFilters.category) {
         filteredMovies = filteredMovies.filter(movie => 
-            movie.category === currentFilters.category
+            movie.category && movie.category.toLowerCase() === currentFilters.category.toLowerCase()
         );
     }
     
@@ -577,3 +613,6 @@ function showError(message) {
 window.viewMovie = viewMovie;
 window.editMovie = editMovie;
 window.showDeleteModal = showDeleteModal;
+window.goBackToAdmin = function() {
+    window.location.href = 'admin.html';
+};
