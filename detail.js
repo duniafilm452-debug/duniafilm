@@ -444,7 +444,7 @@ async function recordWatchHistory() {
             .upsert({
                 user_id: currentUser.id,
                 movie_id: currentMovie.id,
-                last_watched: new Date().toISOString()
+                watched_at: new Date().toISOString()
             });
     } catch (error) {
         console.error('Exception in recordWatchHistory:', error);
