@@ -69,6 +69,45 @@ body {
   font-size: 1rem;
 }
 
+/* Iklan Banner */
+.ad-banner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 15px auto;
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 10px;
+  max-width: 320px;
+  height: 60px;
+  overflow: hidden;
+}
+
+.ad-banner.top-banner {
+  margin: 10px auto;
+}
+
+.ad-banner.bottom-banner {
+  margin: 15px auto 20px auto;
+}
+
+.ad-banner.inline-banner {
+  grid-column: 1 / -1;
+  margin: 10px auto;
+  background: transparent;
+}
+
+/* Social Bar */
+.social-bar {
+  position: fixed;
+  bottom: 80px;
+  right: 10px;
+  z-index: 99;
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px;
+}
+
 /* Categories Section */
 .categories-section {
   padding: 20px 0 10px;
@@ -434,6 +473,16 @@ body {
     font-size: 0.55rem;
     padding: 3px 6px;
   }
+  
+  .social-bar {
+    bottom: 70px;
+    right: 5px;
+  }
+  
+  .ad-banner {
+    margin: 10px auto;
+    max-width: 300px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -486,6 +535,11 @@ body {
     font-size: 0.5rem;
     padding: 2px 4px;
   }
+  
+  .ad-banner {
+    max-width: 280px;
+    height: 50px;
+  }
 }
 
 @media (max-width: 360px) {
@@ -496,5 +550,9 @@ body {
   
   .search-box {
     width: 150px;
+  }
+  
+  .ad-banner {
+    max-width: 260px;
   }
 }

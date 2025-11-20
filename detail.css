@@ -37,6 +37,39 @@ body {
   background: #cc0000;
 }
 
+/* Iklan Banner */
+.ad-banner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 15px auto;
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 10px;
+  max-width: 320px;
+  height: 60px;
+  overflow: hidden;
+}
+
+.ad-banner.top-banner {
+  margin: 10px auto 15px auto;
+}
+
+.ad-banner.bottom-banner {
+  margin: 15px auto 20px auto;
+}
+
+/* Social Bar */
+.social-bar {
+  position: fixed;
+  bottom: 20px;
+  right: 10px;
+  z-index: 99;
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px;
+}
+
 /* Main Content */
 .yt-main {
   max-width: 1200px;
@@ -646,6 +679,16 @@ body {
   .recommend-title-text {
     font-size: 0.85rem;
   }
+  
+  .social-bar {
+    bottom: 15px;
+    right: 5px;
+  }
+  
+  .ad-banner {
+    margin: 10px auto;
+    max-width: 300px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -682,6 +725,11 @@ body {
   .popup-actions {
     flex-direction: column;
   }
+  
+  .ad-banner {
+    max-width: 280px;
+    height: 50px;
+  }
 }
 
 @media (max-width: 360px) {
@@ -694,5 +742,9 @@ body {
   .episode-title,
   .recommend-title-text {
     font-size: 0.75rem;
+  }
+  
+  .ad-banner {
+    max-width: 260px;
   }
 }

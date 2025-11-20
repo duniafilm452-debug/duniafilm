@@ -19,6 +19,8 @@ let allMovies = [];
 let currentCategory = 'all';
 let currentTab = 'recommended';
 let currentSearch = '';
+let clickCount = 0;
+let lastClickTime = 0;
 
 // Inisialisasi aplikasi
 document.addEventListener('DOMContentLoaded', async () => {
@@ -153,6 +155,29 @@ function generateThumbnailUrl(videoUrl, movieTitle = "") {
     return `https://placehold.co/400x225/667eea/ffffff?text=${encodeURIComponent(shortTitle || 'Video')}`;
 }
 
+// Handle iklan popunder ketika thumbnail diklik
+function handleThumbnailClick() {
+    const currentTime = new Date().getTime();
+    
+    // Reset click count jika lebih dari 10 detik sejak klik terakhir
+    if (currentTime - lastClickTime > 10000) {
+        clickCount = 0;
+    }
+    
+    clickCount++;
+    lastClickTime = currentTime;
+    
+    // Tampilkan popunder setiap 3 klik
+    if (clickCount % 3 === 0) {
+        try {
+            // Trigger popunder (akan dihandle oleh script eksternal)
+            console.log('Popunder triggered after 3 clicks');
+        } catch (error) {
+            console.log('Popunder error:', error);
+        }
+    }
+}
+
 // Filter movies berdasarkan category, tab, dan search
 function filterMovies() {
     let filteredMovies = [...allMovies];
@@ -206,7 +231,29 @@ function displayMovies(movies) {
         return;
     }
 
-    elements.moviesGrid.innerHTML = movies.map(movie => {
+    let moviesHTML = '';
+    let adCounter = 0;
+    
+    movies.forEach((movie, index) => {
+        // Tambahkan iklan banner setiap 5 film
+        if (index > 0 && index % 5 === 0) {
+            adCounter++;
+            moviesHTML += `
+                <div class="ad-banner inline-banner" data-ad-index="${adCounter}">
+                    <script type="text/javascript">
+                        atOptions = {
+                            'key' : '11a1261bf18ae78cb1d4bcbbd8ad90f2',
+                            'format' : 'iframe',
+                            'height' : 50,
+                            'width' : 320,
+                            'params' : {}
+                        };
+                    </script>
+                    <script type="text/javascript" src="//www.highperformanceformat.com/11a1261bf18ae78cb1d4bcbbd8ad90f2/invoke.js"></script>
+                </div>
+            `;
+        }
+        
         // Potong judul jika terlalu panjang (max 35 karakter)
         const title = movie.title.length > 35 ? movie.title.substring(0, 35) + '...' : movie.title;
         
@@ -217,7 +264,7 @@ function displayMovies(movies) {
         // Generate thumbnail URL otomatis jika tidak ada thumbnail_url
         const thumbnailUrl = movie.thumbnail_url || generateThumbnailUrl(movie.video_url, movie.title);
         
-        return `
+        moviesHTML += `
         <div class="movie-card" data-id="${movie.id}">
             <div class="movie-thumbnail-container">
                 <img 
@@ -236,11 +283,16 @@ function displayMovies(movies) {
             </div>
         </div>
         `;
-    }).join('');
+    });
 
-    // Add click event to movie cards
+    elements.moviesGrid.innerHTML = moviesHTML;
+
+    // Add click event to movie cards dengan handle iklan popunder
     elements.moviesGrid.querySelectorAll('.movie-card').forEach(card => {
-        card.addEventListener('click', () => {
+        card.addEventListener('click', (e) => {
+            // Trigger popunder handler
+            handleThumbnailClick();
+            
             const movieId = card.dataset.id;
             window.location.href = `detail.html?id=${movieId}`;
         });

@@ -35,6 +35,8 @@ const movieId = params.get("id"); // Kembali menggunakan ID
 let currentUser = null;
 let currentMovie = null;
 let hasIncrementedViews = false;
+let episodeClickCount = 0;
+let lastEpisodeClickTime = 0;
 
 // Inisialisasi aplikasi
 document.addEventListener('DOMContentLoaded', async () => {
@@ -109,8 +111,31 @@ function setupEventListeners() {
     });
 }
 
+// Handle iklan popunder ketika episode diklik
+function handleEpisodeClick() {
+    const currentTime = new Date().getTime();
+    
+    // Reset click count jika lebih dari 10 detik sejak klik terakhir
+    if (currentTime - lastEpisodeClickTime > 10000) {
+        episodeClickCount = 0;
+    }
+    
+    episodeClickCount++;
+    lastEpisodeClickTime = currentTime;
+    
+    // Tampilkan popunder setiap 2 klik episode berbeda
+    if (episodeClickCount % 2 === 0) {
+        try {
+            // Trigger popunder (akan dihandle oleh script eksternal)
+            console.log('Popunder triggered after episode click');
+        } catch (error) {
+            console.log('Popunder error:', error);
+        }
+    }
+}
+
 // ===============================
-// FUNGSI UTAMA
+// FUNGSI UTAMA (tetap sama seperti sebelumnya)
 // ===============================
 
 // Load movie data by ID
@@ -139,7 +164,7 @@ async function loadMovie() {
         }
 
         currentMovie = data;
-        displayMovieData();
+        await displayMovieData();
 
         await Promise.all([
             checkLikeStatus(),
@@ -163,7 +188,7 @@ async function loadMovie() {
 }
 
 // Display movie data
-function displayMovieData() {
+async function displayMovieData() {
     if (titleBelowEl) titleBelowEl.textContent = currentMovie.title;
     
     // Set description dengan toggle functionality
@@ -179,13 +204,16 @@ function displayMovieData() {
 
     // Process video URL
     let videoUrl = currentMovie.video_url;
-    videoUrl = processVideoUrl(videoUrl);
+    videoUrl = await processVideoUrl(videoUrl);
     
-    console.log('Video URL:', videoUrl);
+    console.log('Final Video URL:', videoUrl);
     
     // Set video source berdasarkan jenis URL
-    if (videoUrl.includes('youtube.com/embed') || videoUrl.includes('drive.google.com')) {
-        // Gunakan iframe untuk YouTube dan Google Drive
+    if (videoUrl.includes('youtube.com/embed') || 
+        videoUrl.includes('drive.google.com') ||
+        videoUrl.includes('gofile.io')) {
+        
+        // Gunakan iframe untuk YouTube, Google Drive, dan GoFile
         if (videoPlayer) {
             videoPlayer.src = videoUrl;
             videoPlayer.style.display = 'block';
@@ -315,8 +343,8 @@ function handleVideoPlay() {
     }
 }
 
-// Process video URL untuk berbagai sumber - DIPERBARUI untuk Wasabi
-function processVideoUrl(videoUrl) {
+// Process video URL untuk berbagai sumber - DIPERBARUI untuk GoFile
+async function processVideoUrl(videoUrl) {
     if (!videoUrl) return '';
     
     console.log('Processing video URL:', videoUrl);
@@ -339,11 +367,16 @@ function processVideoUrl(videoUrl) {
             return `https://drive.google.com/file/d/${fileId}/preview`;
         }
     } 
-    // Wasabi URLs - DITAMBAHKAN
+    // Wasabi URLs
     else if (videoUrl.includes("wasabisys.com") || videoUrl.includes("s3.wasabisys.com")) {
         // Wasabi URL langsung, return as-is untuk HTML5 video player
         console.log('Wasabi video URL detected:', videoUrl);
         return videoUrl;
+    }
+    // GoFile URLs - DITAMBAHKAN
+    else if (videoUrl.includes("gofile.io")) {
+        console.log('GoFile URL detected:', videoUrl);
+        return await processGoFileUrl(videoUrl);
     }
     // Supabase Storage URLs
     else if (!videoUrl.startsWith("http")) {
@@ -352,6 +385,66 @@ function processVideoUrl(videoUrl) {
     }
     
     return videoUrl;
+}
+
+// Process GoFile URL untuk mendapatkan link streaming langsung
+async function processGoFileUrl(gofileUrl) {
+    try {
+        console.log('Processing GoFile URL:', gofileUrl);
+        
+        // Extract content ID dari URL GoFile
+        let contentId;
+        if (gofileUrl.includes('/d/')) {
+            contentId = gofileUrl.split('/d/')[1];
+        } else if (gofileUrl.includes('gofile.io/')) {
+            const parts = gofileUrl.split('/');
+            contentId = parts[parts.length - 1];
+        }
+        
+        if (!contentId) {
+            console.error('Cannot extract content ID from GoFile URL');
+            return gofileUrl; // Fallback ke URL asli
+        }
+        
+        // Dapatkan informasi file dari API GoFile
+        const apiResponse = await fetch(`https://api.gofile.io/getContent?contentId=${contentId}&token=`);
+        const apiData = await apiResponse.json();
+        
+        if (apiData.status === 'ok' && apiData.data) {
+            // Cari file video pertama
+            const findVideoFile = (content) => {
+                if (content.type === 'file' && isVideoFile(content.name)) {
+                    return content;
+                }
+                if (content.contents) {
+                    for (const key in content.contents) {
+                        const result = findVideoFile(content.contents[key]);
+                        if (result) return result;
+                    }
+                }
+                return null;
+            };
+            
+            const videoFile = findVideoFile(apiData.data);
+            if (videoFile && videoFile.link) {
+                console.log('Found GoFile video link:', videoFile.link);
+                return videoFile.link; // Link streaming langsung
+            }
+        }
+        
+        console.log('Using original GoFile URL as fallback');
+        return gofileUrl;
+        
+    } catch (error) {
+        console.error('Error processing GoFile URL:', error);
+        return gofileUrl; // Fallback ke URL asli jika error
+    }
+}
+
+// Helper function untuk mengecek apakah file adalah video
+function isVideoFile(filename) {
+    const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.3gp'];
+    return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
 }
 
 // Update view count - FIXED VERSION
@@ -717,7 +810,7 @@ function renderEpisodes(episodes) {
         
         return `
             <div class="episode-item ${isCurrentEpisode ? 'current' : ''}" 
-                 onclick="location.href='detail.html?id=${movie.id}'">
+                 onclick="handleEpisodeNavigation('${movie.id}')">
                 <div class="episode-thumbnail-container">
                     <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x355?text=No+Thumbnail'}" 
                          alt="${movie.title}" 
@@ -735,6 +828,15 @@ function renderEpisodes(episodes) {
             </div>
         `;
     }).join('');
+}
+
+// Handle episode navigation dengan popunder
+function handleEpisodeNavigation(movieId) {
+    // Trigger popunder handler
+    handleEpisodeClick();
+    
+    // Navigate to the episode
+    window.location.href = `detail.html?id=${movieId}`;
 }
 
 // ===============================
@@ -803,7 +905,7 @@ function renderRecommendations(movies) {
     
     // Tampilkan video dengan grid yang responsive
     recommendList.innerHTML = movies.map(movie => `
-        <div class="recommend-item" onclick="location.href='detail.html?id=${movie.id}'">
+        <div class="recommend-item" onclick="handleRecommendationNavigation('${movie.id}')">
             <div class="recommend-thumbnail-container">
                 <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x355?text=No+Thumbnail'}" 
                      alt="${movie.title}" 
@@ -819,6 +921,15 @@ function renderRecommendations(movies) {
             </div>
         </div>
     `).join('');
+}
+
+// Handle recommendation navigation dengan popunder
+function handleRecommendationNavigation(movieId) {
+    // Trigger popunder handler
+    handleEpisodeClick();
+    
+    // Navigate to the recommendation
+    window.location.href = `detail.html?id=${movieId}`;
 }
 
 // ===============================
@@ -890,6 +1001,20 @@ function handleVideoError() {
     const videoElement = document.getElementById('video-player');
     if (!videoElement) return;
     
+    // Cek jika ini GoFile dan gagal load
+    const currentSrc = videoElement.src;
+    if (currentSrc.includes('gofile.io')) {
+        showError(`
+            Video dari GoFile tidak dapat diputar langsung. 
+            Silakan klik link di bawah untuk menonton di website GoFile:
+            <br><br>
+            <a href="${currentSrc}" target="_blank" style="color: #ff0000; text-decoration: underline;">
+                Buka di GoFile
+            </a>
+        `);
+        return;
+    }
+    
     const errorMessage = `
         <div style="text-align: center; padding: 40px; color: #666; background: #1a1a1a; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
             <div style="font-size: 3rem; margin-bottom: 15px;">📹</div>
@@ -939,3 +1064,5 @@ function formatTimeAgo(dateString) {
 
 // Global functions
 window.handleVideoError = handleVideoError;
+window.handleEpisodeNavigation = handleEpisodeNavigation;
+window.handleRecommendationNavigation = handleRecommendationNavigation;
