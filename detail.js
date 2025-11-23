@@ -1,16 +1,15 @@
-// detail.js (VERSI PRO FINAL - DIPERBAIKI)
-// Menggunakan Supabase client
+// detail.js (VERSI PRO FINAL - SECURE + SMART RECOMMENDATION)
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.0";
 
-// Konfigurasi Supabase (tidak diubah)
+// ⚠️ PENTING: Pastikan Row Level Security (RLS) diaktifkan di Supabase Anda!
 const SUPABASE_URL = "https://kwuqrsnkxlxzqvimoydu.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3dXFyc25reGx4enF2aW1veWR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTQ5ODUsImV4cCI6MjA3NDk5MDk4NX0.6XQjnexc69VVSzvB5XrL8gFGM54Me9c5TrR20ysfvTk";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ------------------------
-// ELEMENT REFERENCES
+// DOM ELEMENTS
 // ------------------------
-let videoPlayer; // akan diinisialisasi nanti
+let videoPlayer;
 const titleBelowEl = document.getElementById("movie-title-below");
 const descEl = document.getElementById("movie-desc");
 const viewCount = document.getElementById("view-count");
@@ -31,70 +30,56 @@ const popup = document.getElementById("login-popup");
 const popupCancel = document.getElementById("popup-cancel");
 const popupLogin = document.getElementById("popup-login");
 
-// Ad overlay elements
+// Ad Elements
 const adOverlay = document.getElementById("ad-overlay");
 const adVideo = document.getElementById("ad-video");
 const adCountdown = document.getElementById("ad-seconds");
 const adSkipBtn = document.getElementById("ad-skip-btn");
 
-// Data & state
+// ------------------------
+// STATE & CONFIG
+// ------------------------
 const params = new URLSearchParams(window.location.search);
 const movieId = params.get("id");
 let currentUser = null;
 let currentMovie = null;
 let hasIncrementedViews = false;
 
-// Ad config
+// Config Iklan
 const VAST_URL = "https://plumprush.com/d/m.FpzddGGnNHvPZ/G/Ue/Ye/mz9KucZ-UulikSPoTqYo2yO/TVIY4ZM/DpIxt/NcjlYe5NMdjbgdwEMmwp";
-const SKIP_AFTER_SECONDS = 10; // user chose option C
-const MIDROLL_OFFSET_SECONDS = 900; // 15 minutes
-const MIN_DURATION_FOR_MIDROLL = 300; // 5 minutes
-const ADS_SESSION_KEY = `ads_shown_${movieId}`; // per-episode storage key
+const SKIP_AFTER_SECONDS = 5; 
+const MIDROLL_OFFSET_SECONDS = 900; 
+const ADS_SESSION_KEY = `ads_shown_${movieId}`; 
 
-// Will store ad shown flags
-let adFlags = {
-  pre: false,
-  mid: false,
-  post: false
-};
+let adFlags = { pre: false, mid: false, post: false };
 
-// Initialize on DOMContentLoaded
+// ------------------------
+// INITIALIZATION
+// ------------------------
 document.addEventListener('DOMContentLoaded', async () => {
   await initializeApp();
   setupEventListeners();
 });
 
-// ------------------------
-// INITIALIZE APP
-// ------------------------
 async function initializeApp() {
-  showLoading(true);
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (session) currentUser = session.user;
 
-    // Load movie and UI
     await loadMovie();
 
-    // Restore ad flags from sessionStorage (per-episode), if exists
     const stored = sessionStorage.getItem(ADS_SESSION_KEY);
     if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        adFlags = { ...adFlags, ...parsed };
-      } catch (e) { /* ignore */ }
+      try { adFlags = { ...adFlags, ...JSON.parse(stored) }; } catch (e) {}
     }
-
   } catch (err) {
-    console.error('initializeApp error', err);
-    showError('Gagal memuat aplikasi');
-  } finally {
-    showLoading(false);
+    console.error('Init Error', err);
+    showError('Gagal memuat aplikasi. Periksa koneksi internet.');
   }
 }
 
 // ------------------------
-// SETUP EVENT LISTENERS
+// EVENT LISTENERS
 // ------------------------
 function setupEventListeners() {
   if (popupCancel) popupCancel.onclick = () => popup.classList.add("hidden");
@@ -110,112 +95,45 @@ function setupEventListeners() {
   if (episodesTab) episodesTab.onclick = () => switchTab('episodes');
   if (recommendationsTab) recommendationsTab.onclick = () => switchTab('recommendations');
 
-  // Ads skip button
-  if (adSkipBtn) adSkipBtn.onclick = () => {
-    stopAdAndResume();
-  }
+  if (adSkipBtn) adSkipBtn.onclick = stopAdAndResume;
 
-  // session auth change
   supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
       currentUser = session.user;
-      await checkLikeStatus();
-      await checkFavoriteStatus();
+      await Promise.all([checkLikeStatus(), checkFavoriteStatus()]);
       if (popup) popup.classList.add("hidden");
-      showSuccessPopup('Login berhasil!');
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
-      await checkLikeStatus();
-      await checkFavoriteStatus();
     }
   });
 }
 
 // ------------------------
-// VIDEO EVENT HANDLERS (DIPERBAIKI)
-// ------------------------
-function handleVideoLoad() {
-  console.log('Video loaded');
-  updateViewCount();
-}
-
-function handleVideoPlay() {
-  console.log('Video playing');
-  if (!hasIncrementedViews) {
-    updateViewCount();
-  }
-}
-
-function handleVideoError(event) {
-  console.error('Video error:', event);
-  const videoElement = event.target;
-  
-  if (videoElement.src.includes('gofile.io')) {
-    showError(`
-      Video dari GoFile tidak dapat diputar langsung. 
-      Silakan klik link di bawah untuk menonton di website GoFile:
-      <br><br>
-      <a href="${videoElement.src}" target="_blank" style="color: #ff0000; text-decoration: underline;">
-        Buka di GoFile
-      </a>
-    `);
-  } else {
-    showError(`
-      <div style="text-align: center; padding: 40px; color: #666; background: #1a1a1a; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-        <div style="font-size: 3rem; margin-bottom: 15px;">📹</div>
-        <h3 style="margin-bottom: 10px; color: #fff;">Video Tidak Dapat Diputar</h3>
-        <p style="margin-bottom: 20px;">Silakan coba beberapa saat lagi atau hubungi administrator.</p>
-        <button onclick="location.reload()" style="background: #ff0000; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 15px;">Coba Lagi</button>
-      </div>
-    `);
-  }
-}
-
-// ------------------------
-// LOAD MOVIE
+// CORE LOGIC
 // ------------------------
 async function loadMovie() {
-  if (!movieId) {
-    showError('ID film tidak ditemukan');
-    return;
-  }
+  if (!movieId) return showError('ID film tidak ditemukan di URL');
 
   try {
-    const { data, error } = await supabase
-      .from("movies")
-      .select("*")
-      .eq("id", movieId)
-      .single();
-
-    if (error) {
-      console.error('Error loading movie', error);
-      showError('Gagal memuat data film');
-      return;
-    }
-    if (!data) {
-      showError('Film tidak ditemukan');
-      return;
-    }
+    const { data, error } = await supabase.from("movies").select("*").eq("id", movieId).single();
+    if (error || !data) throw new Error('Film tidak ditemukan');
 
     currentMovie = data;
     await displayMovieData();
+    await Promise.all([checkLikeStatus(), checkFavoriteStatus()]);
 
-    await Promise.all([ checkLikeStatus(), checkFavoriteStatus() ]);
-
-    // Default tab based on series
     const seriesTitle = extractSeriesTitle(currentMovie.title);
-    if (seriesTitle) setTimeout(() => switchTab('episodes'), 100);
-    else setTimeout(() => switchTab('recommendations'), 100);
-
+    if (seriesTitle) {
+      switchTab('episodes');
+    } else {
+      switchTab('recommendations');
+    }
   } catch (err) {
-    console.error('loadMovie exception', err);
-    showError('Terjadi kesalahan saat memuat film');
+    console.error(err);
+    showError('Gagal memuat data film.');
   }
 }
 
-// ------------------------
-// DISPLAY MOVIE DATA & PREPARE PLAYER (DIPERBAIKI)
-// ------------------------
 async function displayMovieData() {
   if (titleBelowEl) titleBelowEl.textContent = currentMovie.title;
   if (descEl) {
@@ -226,18 +144,13 @@ async function displayMovieData() {
 
   let videoUrl = currentMovie.video_url;
   videoUrl = await processVideoUrl(videoUrl);
-  console.log('Final Video URL:', videoUrl);
 
-  // Pastikan videoPlayer reference sudah ada
   videoPlayer = document.getElementById("video-player");
-  
-  if (!videoPlayer) {
-    console.error('Video player element not found');
-    showError('Element pemutar video tidak ditemukan');
-    return;
-  }
+  if (!videoPlayer) return;
 
-  if (videoUrl.includes('youtube.com/embed') || videoUrl.includes('drive.google.com') || videoUrl.includes('gofile.io')) {
+  const isEmbed = videoUrl.includes('youtube.com/embed') || videoUrl.includes('drive.google.com') || (videoUrl.includes('gofile.io') && !videoUrl.endsWith('.mp4'));
+
+  if (isEmbed) {
     videoPlayer.src = videoUrl;
     videoPlayer.style.display = 'block';
     attemptPreRollForIframe();
@@ -247,778 +160,409 @@ async function displayMovieData() {
 }
 
 // ------------------------
-// PROCESS VIDEO URL (original logic preserved)
-// ------------------------
-async function processVideoUrl(videoUrl) {
-  if (!videoUrl) return '';
-
-  // YouTube handling
-  if (videoUrl.includes("youtube.com/watch?v=")) {
-    const id = new URL(videoUrl).searchParams.get("v");
-    return `https://www.youtube.com/embed/${id}?autoplay=0`;
-  } else if (videoUrl.includes("youtu.be/")) {
-    const id = videoUrl.split("youtu.be/")[1];
-    return `https://www.youtube.com/embed/${id}?autoplay=0`;
-  } else if (videoUrl.includes("drive.google.com")) {
-    if (videoUrl.includes("/file/d/")) {
-      const fileId = videoUrl.split('/file/d/')[1].split('/')[0];
-      return `https://drive.google.com/file/d/${fileId}/preview`;
-    } else if (videoUrl.includes("id=")) {
-      const fileId = new URL(videoUrl).searchParams.get("id");
-      return `https://drive.google.com/file/d/${fileId}/preview`;
-    }
-  } else if (videoUrl.includes("wasabisys.com") || videoUrl.includes("s3.wasabisys.com")) {
-    return videoUrl;
-  } else if (videoUrl.includes("gofile.io")) {
-    return await processGoFileUrl(videoUrl);
-  } else if (!videoUrl.startsWith("http")) {
-    const { data: urlData } = supabase.storage.from("videos").getPublicUrl(videoUrl);
-    return urlData.publicUrl;
-  }
-
-  return videoUrl;
-}
-
-// ------------------------
-// GOFILE PROCESSOR
-// ------------------------
-async function processGoFileUrl(gofileUrl) {
-  try {
-    let contentId;
-    if (gofileUrl.includes('/d/')) contentId = gofileUrl.split('/d/')[1];
-    else {
-      const parts = gofileUrl.split('/');
-      contentId = parts[parts.length - 1];
-    }
-    if (!contentId) return gofileUrl;
-
-    const apiResponse = await fetch(`https://api.gofile.io/getContent?contentId=${contentId}&token=`);
-    const apiData = await apiResponse.json();
-
-    if (apiData.status === 'ok' && apiData.data) {
-      const findVideoFile = (content) => {
-        if (content.type === 'file' && isVideoFile(content.name)) return content;
-        if (content.contents) {
-          for (const key in content.contents) {
-            const result = findVideoFile(content.contents[key]);
-            if (result) return result;
-          }
-        }
-        return null;
-      };
-      const videoFile = findVideoFile(apiData.data);
-      if (videoFile && videoFile.link) return videoFile.link;
-    }
-    return gofileUrl;
-  } catch (err) {
-    console.error('processGoFileUrl error', err);
-    return gofileUrl;
-  }
-}
-
-function isVideoFile(filename) {
-  const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.3gp'];
-  return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
-}
-
-// ------------------------
-// REPLACE IFRAME WITH HTML5 VIDEO (DIPERBAIKI)
+// VIDEO PLAYER LOGIC
 // ------------------------
 function replaceIframeWithVideoPlayer(videoUrl) {
-  const oldVideoPlayer = document.getElementById('video-player');
-  if (!oldVideoPlayer) return;
-
-  const videoContainer = oldVideoPlayer.parentElement;
-  const newVideoPlayer = document.createElement('video');
-
-  newVideoPlayer.id = 'video-player';
-  newVideoPlayer.controls = true;
-  newVideoPlayer.style.width = '100%';
-  newVideoPlayer.style.height = '100%';
-  newVideoPlayer.style.position = 'absolute';
-  newVideoPlayer.style.top = '0';
-  newVideoPlayer.style.left = '0';
-  newVideoPlayer.style.borderRadius = '12px';
-  newVideoPlayer.preload = 'metadata';
-  newVideoPlayer.playsInline = true;
-  newVideoPlayer.setAttribute('webkit-playsinline', 'true');
-
-  const source = document.createElement('source');
-  source.src = videoUrl;
-  source.type = getVideoMimeType(videoUrl);
-
-  newVideoPlayer.appendChild(source);
-  newVideoPlayer.innerHTML += 'Browser Anda tidak mendukung pemutar video.';
-
-  oldVideoPlayer.replaceWith(newVideoPlayer);
+  const oldPlayer = document.getElementById('video-player');
+  const newVideo = document.createElement('video');
+  newVideo.id = 'video-player';
+  newVideo.controls = true;
+  newVideo.playsInline = true;
+  newVideo.setAttribute('webkit-playsinline', 'true');
+  newVideo.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain;";
+  newVideo.src = videoUrl;
   
-  // REBIND reference dengan benar
-  videoPlayer = document.getElementById('video-player');
-  
-  // Pastikan event listeners ditambahkan
-  if (videoPlayer) {
-    videoPlayer.addEventListener('loadeddata', handleVideoLoad);
-    videoPlayer.addEventListener('play', handleVideoPlay);
-    videoPlayer.addEventListener('error', handleVideoError);
-    videoPlayer.addEventListener('ended', handleMainVideoEnded);
+  oldPlayer.replaceWith(newVideo);
+  videoPlayer = newVideo;
 
-    videoPlayer.addEventListener('loadedmetadata', () => {
-      if (!adFlags.pre) {
-        playPreRollThen(() => {
-          console.log('Pre-roll completed, video ready to play');
-        });
-      }
-      setupMidrollMonitor(videoPlayer);
-    });
+  videoPlayer.addEventListener('loadeddata', () => {
+    console.log('Video ready');
+    updateViewCount();
+  });
+  
+  videoPlayer.addEventListener('play', () => {
+    if (!hasIncrementedViews) updateViewCount();
+  });
+
+  videoPlayer.addEventListener('ended', handleMainVideoEnded);
+  
+  videoPlayer.addEventListener('error', () => {
+    showError('Gagal memutar video. Format mungkin tidak didukung atau link kadaluarsa.');
+  });
+
+  videoPlayer.addEventListener('loadedmetadata', () => {
+    if (!adFlags.pre) {
+      playPreRollThen(() => console.log('Preroll done'));
+    }
+    setupMidrollMonitor(videoPlayer);
+  });
+}
+
+async function processVideoUrl(url) {
+  if (!url) return '';
+  if (url.includes("youtube.com") || url.includes("youtu.be")) {
+    const id = url.includes("v=") ? new URL(url).searchParams.get("v") : url.split("/").pop();
+    return `https://www.youtube.com/embed/${id}?autoplay=0`;
   }
+  if (!url.startsWith("http")) {
+    const { data } = supabase.storage.from("videos").getPublicUrl(url);
+    return data.publicUrl;
+  }
+  return url; 
 }
 
 // ------------------------
-// MIME helper
+// ADS SYSTEM (VAST + TRACKING)
 // ------------------------
-function getVideoMimeType(videoUrl) {
-  if (videoUrl.includes('.mp4')) return 'video/mp4';
-  if (videoUrl.includes('.webm')) return 'video/webm';
-  if (videoUrl.includes('.ogg')) return 'video/ogg';
-  if (videoUrl.includes('.mov')) return 'video/quicktime';
-  return 'video/mp4';
+function firePixel(url) {
+  if (!url) return;
+  const img = new Image();
+  img.src = url;
 }
 
-// ------------------------
-// PRE / MID / POST AD FLOW
-// ------------------------
-
-// Utility: fetch VAST xml and extract a direct MediaFile (mp4/webm) URL
-async function fetchVastMediaUrl(vastUrl) {
+async function fetchVastAndTrack(vastUrl) {
   try {
-    const r = await fetch(vastUrl, { method: 'GET', mode: 'cors' });
-    if (!r.ok) throw new Error('VAST fetch failed');
+    const r = await fetch(vastUrl);
+    if (!r.ok) throw new Error('VAST Fetch Failed');
     const text = await r.text();
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(text, "application/xml");
+    const xml = new DOMParser().parseFromString(text, "application/xml");
 
-    // Try to find MediaFile elements with common types
     const mediaFiles = Array.from(xml.getElementsByTagName("MediaFile"));
+    let mediaUrl = null;
     for (const mf of mediaFiles) {
-      const ctype = mf.getAttribute('type') || '';
-      const url = mf.textContent && mf.textContent.trim();
-      if (!url) continue;
-      if (/(mp4|webm|ogg)/i.test(ctype) || /\.(mp4|webm|ogg)(\?|$)/i.test(url)) {
-        return url;
+      const type = mf.getAttribute('type') || '';
+      const content = mf.textContent.trim();
+      if ((type.includes('mp4') || content.endsWith('.mp4')) && content) {
+        mediaUrl = content;
+        break;
       }
     }
-
-    // fallback: search any URL-looking nodes
-    const urlNodes = xml.querySelectorAll("MediaFile, MediaFiles, VASTAdTagURI, Wrapper, URL");
-    for (const node of urlNodes) {
-      const txt = node.textContent && node.textContent.trim();
-      if (txt && /\.(mp4|webm|ogg)(\?|$)/i.test(txt)) return txt;
+    if (!mediaUrl) {
+        const anyUrl = xml.querySelector("MediaFile, VASTAdTagURI");
+        if (anyUrl) mediaUrl = anyUrl.textContent.trim();
     }
 
-    // If no direct media found, return null (may be wrapper)
-    return null;
-  } catch (err) {
-    console.warn('fetchVastMediaUrl error', err);
-    return null;
+    const impressions = [];
+    xml.querySelectorAll("Impression").forEach(n => {
+        if(n.textContent.trim()) impressions.push(n.textContent.trim());
+    });
+
+    return { mediaUrl, impressions };
+
+  } catch (e) {
+    console.warn('VAST Error:', e);
+    return { mediaUrl: null, impressions: [] };
   }
 }
 
-// Show ad overlay and play given media URL
-async function playAdFromMediaUrl(mediaUrl) {
+async function playAdFromMediaUrl(mediaUrl, impressions = []) {
   return new Promise((resolve) => {
     if (!adOverlay || !adVideo) return resolve();
+    impressions.forEach(url => firePixel(url));
 
-    // Setup UI
     adOverlay.classList.remove('hidden');
     adOverlay.setAttribute('aria-hidden', 'false');
     adVideo.src = mediaUrl;
     adVideo.currentTime = 0;
-    adVideo.muted = false;
     
-    const playAd = () => {
-      adVideo.play().catch((e) => {
-        console.warn('Ad play error', e);
-        // Jika autoplay diblokir, coba dengan muted
+    adVideo.play().catch(e => {
         adVideo.muted = true;
-        adVideo.play().catch(e2 => {
-          console.warn('Ad play with muted also failed', e2);
-        });
-      });
-    };
+        adVideo.play();
+    });
 
-    playAd();
-
-    // Countdown & skip logic
-    let adDuration = 0;
     let skipShown = false;
-    const onLoadedMeta = () => {
-      adDuration = Math.floor(adVideo.duration) || 0;
-      adCountdown.textContent = adDuration;
-    };
-    adVideo.addEventListener('loadedmetadata', onLoadedMeta, { once: true });
+    const tick = setInterval(() => {
+        const left = Math.ceil(adVideo.duration - adVideo.currentTime);
+        adCountdown.innerHTML = `Iklan: ${left > 0 ? left : 0}s`;
+        if (!skipShown && adVideo.currentTime >= SKIP_AFTER_SECONDS) {
+            skipShown = true;
+            adSkipBtn.classList.remove('hidden');
+        }
+    }, 500);
 
-    // update timer
-    const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((adVideo.duration || 0) - adVideo.currentTime));
-      adCountdown.textContent = remaining;
-      // Show skip after SKIP_AFTER_SECONDS elapsed
-      if (!skipShown && adVideo.currentTime >= SKIP_AFTER_SECONDS) {
-        skipShown = true;
-        adSkipBtn.classList.remove('hidden');
-      }
-    }, 300);
-
-    // When ad ends or skipped
-    const cleanupAndResolve = () => {
-      clearInterval(interval);
-      adVideo.pause();
-      adVideo.removeAttribute('src');
-      try { adVideo.load(); } catch (e) {}
-      adOverlay.classList.add('hidden');
-      adOverlay.setAttribute('aria-hidden', 'true');
-      adSkipBtn.classList.add('hidden');
-      adCountdown.textContent = '0';
-      resolve();
+    const cleanup = () => {
+        clearInterval(tick);
+        adOverlay.classList.add('hidden');
+        adVideo.pause();
+        adVideo.src = "";
+        adSkipBtn.classList.add('hidden');
+        resolve();
     };
 
-    adVideo.addEventListener('ended', cleanupAndResolve, { once: true });
-    adVideo.addEventListener('error', (e) => {
-      console.warn('Ad playback error', e);
-      cleanupAndResolve();
-    }, { once: true });
-
-    // If user clicks skip, cleanup
-    adSkipBtn.onclick = () => {
-      cleanupAndResolve();
-    };
+    adVideo.onended = cleanup;
+    adVideo.onerror = cleanup;
+    adSkipBtn.onclick = cleanup;
   });
 }
 
-// Play pre-roll then callback
 async function playPreRollThen(cb) {
-  if (adFlags.pre) {
-    if (typeof cb === 'function') cb();
-    return;
+  if (adFlags.pre) return cb && cb();
+  if (videoPlayer && !videoPlayer.paused && videoPlayer.pause) videoPlayer.pause();
+
+  const { mediaUrl, impressions } = await fetchVastAndTrack(VAST_URL);
+  if (mediaUrl) {
+    await playAdFromMediaUrl(mediaUrl, impressions);
   }
   
-  // If ad already shown in session, skip
-  if (sessionStorage.getItem(ADS_SESSION_KEY)) {
-    const parsed = JSON.parse(sessionStorage.getItem(ADS_SESSION_KEY));
-    if (parsed && parsed.pre) {
-      adFlags.pre = true;
-      if (cb) cb();
-      return;
-    }
-  }
-
-  // Try to fetch media URL from VAST
-  const mediaUrl = await fetchVastMediaUrl(VAST_URL);
-  if (!mediaUrl) {
-    console.warn('No direct media found in VAST for pre-roll, skipping pre-roll');
-    adFlags.pre = true;
-    persistAdFlags();
-    if (cb) cb();
-    return;
-  }
-
-  // Pause main video if possible
-  try { 
-    if (videoPlayer && videoPlayer.pause) videoPlayer.pause(); 
-  } catch (e) { /* ignore */ }
-
-  // Play ad
-  await playAdFromMediaUrl(mediaUrl);
   adFlags.pre = true;
-  persistAdFlags();
-
-  if (typeof cb === 'function') cb();
+  sessionStorage.setItem(ADS_SESSION_KEY, JSON.stringify(adFlags));
+  if (cb) cb();
+  if (videoPlayer && videoPlayer.play) videoPlayer.play();
 }
 
-// Setup midroll monitor
-function setupMidrollMonitor(mainVideo) {
-  if (!mainVideo) return;
-
-  function onTimeUpdate() {
-    if (adFlags.mid) return; // already played
-    if (mainVideo.duration && mainVideo.duration > MIN_DURATION_FOR_MIDROLL) {
-      if (mainVideo.currentTime >= MIDROLL_OFFSET_SECONDS) {
-        // mark flagged to prevent duplicates
-        adFlags.mid = true;
-        persistAdFlags();
-
-        // Pause main and attempt mid-roll
-        mainVideo.pause();
-        attemptPlayAdThenResume(mainVideo).catch(() => {
-          // resume even if ad failed
-          try { mainVideo.play(); } catch (e) {}
-        });
-      }
-    }
-  }
-
-  mainVideo.addEventListener('timeupdate', onTimeUpdate);
-}
-
-// When main video ends -> post-roll
-async function handleMainVideoEnded() {
-  if (adFlags.post) return;
-  adFlags.post = true;
-  persistAdFlags();
-
-  const mediaUrl = await fetchVastMediaUrl(VAST_URL);
-  if (!mediaUrl) {
-    console.warn('No direct media found in VAST for post-roll, skipping');
-    return;
-  }
-  // Play post-roll (no resume needed)
-  await playAdFromMediaUrl(mediaUrl);
-}
-
-// Attempt play ad (for mid/post) then resume main
-async function attemptPlayAdThenResume(mainVideo) {
-  const mediaUrl = await fetchVastMediaUrl(VAST_URL);
-  if (!mediaUrl) {
-    console.warn('No media for midroll');
-    try { if (mainVideo && mainVideo.play) mainVideo.play(); } catch (e) {}
-    return;
-  }
-  await playAdFromMediaUrl(mediaUrl);
-  try { if (mainVideo && mainVideo.play) mainVideo.play(); } catch (e) { console.warn('Could not resume main video', e); }
-}
-
-// Stop ad and resume main video immediately (skip handler)
-function stopAdAndResume() {
-  // hide ad overlay and resume main
-  try {
-    adVideo.pause();
-    adVideo.removeAttribute('src');
-    adVideo.load();
-  } catch (e) {}
-  adOverlay.classList.add('hidden');
-  adOverlay.setAttribute('aria-hidden', 'true');
-  adSkipBtn.classList.add('hidden');
-
-  // resume main video if possible
-  try { 
-    if (videoPlayer && videoPlayer.play) videoPlayer.play(); 
-  } catch (e) {}
-}
-
-// In case of iframe (cross-origin) we still show a small pre-roll notice or try to open ad in overlay
-async function attemptPreRollForIframe() {
-  // If we cannot pause iframe, we still show ad overlay once
-  if (adFlags.pre) return;
-  const mediaUrl = await fetchVastMediaUrl(VAST_URL);
-  if (!mediaUrl) {
-    adFlags.pre = true;
-    persistAdFlags();
-    return;
-  }
-  // Show overlay ad, but we cannot pause iframe; after ad finishes, just hide overlay
-  await playAdFromMediaUrl(mediaUrl);
-  adFlags.pre = true;
-  persistAdFlags();
-}
-
-// Persist adFlags to sessionStorage (per-episode)
-function persistAdFlags() {
-  try {
-    sessionStorage.setItem(ADS_SESSION_KEY, JSON.stringify(adFlags));
-  } catch (e) { /* ignore */ }
-}
-
-// ------------------------
-// VIEW COUNT / LIKE / FAVORITE
-// ------------------------
-async function updateViewCount() {
-  if (!currentMovie || hasIncrementedViews) return;
-
-  const id = currentMovie.id;
-  try {
-    const viewKey = `viewed_${id}`;
-    const hasViewed = sessionStorage.getItem(viewKey);
-    if (hasViewed) return;
-
-    // Try RPC first
-    const { data: rpcData, error: rpcError } = await supabase.rpc('increment_views', { movie_id: id });
-    if (rpcError) {
-      // fallback
-      const { data: movieData } = await supabase.from("movies").select("views").eq("id", id).single();
-      if (movieData) {
-        const newViews = (movieData.views || 0) + 1;
-        const { error: updateError } = await supabase.from("movies").update({ views: newViews }).eq("id", id);
-        if (!updateError && viewCount) viewCount.textContent = `👁️ ${newViews} tayangan`;
-      }
-    } else {
-      const { data: updatedMovie } = await supabase.from("movies").select("views").eq("id", id).single();
-      if (updatedMovie && viewCount) viewCount.textContent = `👁️ ${updatedMovie.views || 0} tayangan`;
-    }
-
-    sessionStorage.setItem(viewKey, 'true');
-    hasIncrementedViews = true;
-    await recordWatchHistory();
-
-  } catch (err) {
-    console.error('updateViewCount error', err);
-  }
-}
-
-async function recordWatchHistory() {
-  if (!currentUser || !currentMovie) return;
-  try {
-    await supabase.from("watch_history").upsert({
-      user_id: currentUser.id,
-      movie_id: currentMovie.id,
-      watched_at: new Date().toISOString()
+function setupMidrollMonitor(video) {
+    video.addEventListener('timeupdate', () => {
+        if (!adFlags.mid && video.currentTime > MIDROLL_OFFSET_SECONDS) {
+            adFlags.mid = true;
+            video.pause();
+            fetchVastAndTrack(VAST_URL).then(({mediaUrl, impressions}) => {
+                if(mediaUrl) playAdFromMediaUrl(mediaUrl, impressions).then(() => video.play());
+                else video.play();
+            });
+        }
     });
-  } catch (err) { console.error('recordWatchHistory error', err); }
 }
 
-async function handleLike() {
-  if (!currentUser || !currentMovie) {
-    showLoginPopup("menyukai film");
-    return;
-  }
-  try {
-    const { data: existingLike } = await supabase.from("likes").select("id").eq("movie_id", currentMovie.id).eq("user_id", currentUser.id).single();
-    if (existingLike) {
-      await supabase.from("likes").delete().eq("id", existingLike.id);
-      if (likeBtn) likeBtn.classList.remove("liked");
-      showSuccessPopup('Like dihapus');
-    } else {
-      await supabase.from("likes").insert({ movie_id: currentMovie.id, user_id: currentUser.id });
-      if (likeBtn) likeBtn.classList.add("liked");
-      showSuccessPopup('Film disukai!');
+async function handleMainVideoEnded() {
+    if (adFlags.post) return;
+    const { mediaUrl, impressions } = await fetchVastAndTrack(VAST_URL);
+    if (mediaUrl) {
+        await playAdFromMediaUrl(mediaUrl, impressions);
+        adFlags.post = true;
+        sessionStorage.setItem(ADS_SESSION_KEY, JSON.stringify(adFlags));
     }
-    await updateLikeCount();
-  } catch (err) {
-    console.error('handleLike error', err); showError('Gagal memperbarui like');
-  }
 }
 
-async function handleFavorite() {
-  if (!currentUser || !currentMovie) {
-    showLoginPopup("menambah favorit");
-    return;
-  }
-  try {
-    const { data: existingFav } = await supabase.from("favorites").select("id").eq("movie_id", currentMovie.id).eq("user_id", currentUser.id).single();
-    if (existingFav) {
-      await supabase.from("favorites").delete().eq("id", existingFav.id);
-      if (favBtn) favBtn.classList.remove("favorited");
-      showSuccessPopup('Dihapus dari favorit');
-    } else {
-      await supabase.from("favorites").insert({ movie_id: currentMovie.id, user_id: currentUser.id });
-      if (favBtn) favBtn.classList.add("favorited");
-      showSuccessPopup('Ditambahkan ke favorit!');
-    }
-  } catch (err) {
-    console.error('handleFavorite error', err); showError('Gagal memperbarui favorit');
-  }
-}
+function stopAdAndResume() {}
 
-function handleShare() {
-  const shareUrl = window.location.href;
-  const shareText = `Tonton "${currentMovie?.title || 'Film Menarik'}" di Dunia Film`;
-  if (navigator.share) {
-    navigator.share({ title: currentMovie?.title || 'Dunia Film', text: shareText, url: shareUrl }).catch(() => fallbackShare(shareUrl));
-  } else fallbackShare(shareUrl);
-}
-function fallbackShare(url) {
-  navigator.clipboard.writeText(url).then(() => showSuccessPopup('Link berhasil disalin!')).catch(() => prompt('Salin link berikut:', url));
-}
-
-async function checkLikeStatus() {
-  if (!currentUser || !currentMovie) {
-    if (likeBtn) likeBtn.classList.remove("liked");
-    return;
-  }
-  try {
-    const { data } = await supabase.from("likes").select("id").eq("movie_id", currentMovie.id).eq("user_id", currentUser.id).single();
-    if (data) { if (likeBtn) likeBtn.classList.add("liked"); }
-    else { if (likeBtn) likeBtn.classList.remove("liked"); }
-    await updateLikeCount();
-  } catch (err) { console.error('checkLikeStatus error', err); }
-}
-
-async function checkFavoriteStatus() {
-  if (!currentUser || !currentMovie) {
-    if (favBtn) favBtn.classList.remove("favorited");
-    return;
-  }
-  try {
-    const { data } = await supabase.from("favorites").select("id").eq("movie_id", currentMovie.id).eq("user_id", currentUser.id).single();
-    if (data) { if (favBtn) favBtn.classList.add("favorited"); }
-    else { if (favBtn) favBtn.classList.remove("favorited"); }
-  } catch (err) { console.error('checkFavoriteStatus error', err); }
-}
-
-async function updateLikeCount() {
-  if (!currentMovie) return;
-  try {
-    const { count } = await supabase.from("likes").select("*", { count: "exact", head: true }).eq("movie_id", currentMovie.id);
-    if (likeCount) likeCount.textContent = count || 0;
-  } catch (err) { console.error('updateLikeCount error', err); }
+function attemptPreRollForIframe() {
+    if (adFlags.pre) return;
+    fetchVastAndTrack(VAST_URL).then(({mediaUrl, impressions}) => {
+        if (mediaUrl) {
+            playAdFromMediaUrl(mediaUrl, impressions).then(() => {
+                adFlags.pre = true;
+                sessionStorage.setItem(ADS_SESSION_KEY, JSON.stringify(adFlags));
+            });
+        }
+    });
 }
 
 // ------------------------
-// TAB MANAGEMENT
+// TAB & CONTENT LOGIC (SECURE)
 // ------------------------
-function switchTab(tabName) {
-  // Update tab buttons
-  if (episodesTab) episodesTab.classList.toggle('active', tabName === 'episodes');
-  if (recommendationsTab) recommendationsTab.classList.toggle('active', tabName === 'recommendations');
+function switchTab(tab) {
+  if (episodesTab) episodesTab.classList.toggle('active', tab === 'episodes');
+  if (recommendationsTab) recommendationsTab.classList.toggle('active', tab === 'recommendations');
+  if (episodesContent) episodesContent.classList.toggle('active', tab === 'episodes');
+  if (recommendationsContent) recommendationsContent.classList.toggle('active', tab === 'recommendations');
   
-  // Update tab content
-  if (episodesContent) episodesContent.classList.toggle('active', tabName === 'episodes');
-  if (recommendationsContent) recommendationsContent.classList.toggle('active', tabName === 'recommendations');
-  
-  // Load content if needed
-  if (tabName === 'episodes') {
-    loadEpisodes();
-  } else if (tabName === 'recommendations') {
-    loadRecommendations();
-  }
+  if (tab === 'episodes') loadEpisodes();
+  else loadRecommendations();
 }
 
-// ------------------------
-// EPISODE / RECOMMENDATIONS
-// ------------------------
+function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return '';
+    return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
 async function loadEpisodes() {
   if (!currentMovie) return;
-  try {
-    if (episodesList) episodesList.innerHTML = '<div class="loading-episodes">Memuat episode...</div>';
-    const seriesTitle = extractSeriesTitle(currentMovie.title);
-    if (!seriesTitle) {
-      episodesList.innerHTML = '<div class="loading-episodes">Tidak ada episode lainnya.</div>';
+  const seriesTitle = extractSeriesTitle(currentMovie.title);
+  
+  if (!seriesTitle) {
+      episodesList.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px; color:#aaa;">Tidak ada episode lain.</div>';
       return;
-    }
-    const { data: episodes, error } = await supabase.from("movies").select("*").ilike("title", `${seriesTitle}%`).order("created_at", { ascending: true });
-    if (error) throw error;
-    renderEpisodes(episodes || []);
-  } catch (err) {
-    console.error('loadEpisodes error', err);
-    if (episodesList) episodesList.innerHTML = '<div class="loading-episodes">Gagal memuat episode.</div>';
   }
-}
 
-function extractSeriesTitle(title) {
-  if (!title) return null;
-  const episodePatterns = [
-    /(.*?)\s*[Ee]pisode\s*\d+/i,
-    /(.*?)\s*[Pp]art\s*\d+/i,
-    /(.*?)\s*[Cc]hapter\s*\d+/i,
-    /(.*?)\s*-\s*[Ee]pisode\s*\d+/i,
-    /(.*?)\s*\(\s*[Ee]pisode\s*\d+\s*\)/i,
-    /(.*?)\s*\d+$/
-  ];
-  for (const pattern of episodePatterns) {
-    const match = title.match(pattern);
-    if (match && match[1]) return match[1].trim();
-  }
-  return null;
-}
+  const { data } = await supabase.from("movies")
+      .select("id, title, thumbnail_url, views, duration")
+      .ilike("title", `${seriesTitle}%`)
+      .order("created_at", { ascending: true });
 
-function extractEpisodeNumber(title) {
-  if (!title) return null;
-  const episodePatterns = [
-    /[Ee]pisode\s*(\d+)/i,
-    /[Pp]art\s*(\d+)/i,
-    /[Cc]hapter\s*(\d+)/i,
-    /-\s*(\d+)$/,
-    /\(\s*(\d+)\s*\)$/,
-    /(\d+)$/
-  ];
-  for (const pattern of episodePatterns) {
-    const match = title.match(pattern);
-    if (match && match[1]) return parseInt(match[1]);
+  if (!data || data.length === 0) {
+      episodesList.innerHTML = '<div style="grid-column:1/-1;">Tidak ada data.</div>';
+      return;
   }
-  return null;
-}
 
-function renderEpisodes(episodes) {
-  if (!episodesList) return;
-  if (!episodes || episodes.length === 0) {
-    episodesList.innerHTML = '<div class="loading-episodes">Tidak ada episode lainnya.</div>';
-    return;
-  }
-  episodesList.innerHTML = episodes.map(movie => {
-    const episodeNumber = extractEpisodeNumber(movie.title);
-    const isCurrentEpisode = movie.id === currentMovie.id;
-    return `
-      <div class="episode-item ${isCurrentEpisode ? 'current' : ''}" onclick="handleEpisodeNavigation('${movie.id}')">
-        <div class="episode-thumbnail-container">
-          <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x355?text=No+Thumbnail'}" alt="${movie.title}" onerror="this.src='https://via.placeholder.com/200x355?text=No+Thumbnail'" loading="lazy">
-        </div>
-        <div class="episode-info">
-          <div class="episode-number">${episodeNumber ? `Episode ${episodeNumber}` : 'Episode'}</div>
-          <p class="episode-title">${escapeHtml(movie.title)}</p>
-          <div class="episode-meta">
-            <span class="views">👁️ ${movie.views || 0}</span>
-            <span class="episode-duration">${movie.duration || '--:--'}</span>
+  episodesList.innerHTML = data.map(m => {
+      const isCurr = m.id === currentMovie.id ? 'current' : '';
+      const epsNum = extractEpisodeNumber(m.title);
+      return `
+        <div class="episode-item ${isCurr}" onclick="handleEpisodeNavigation('${m.id}')">
+          <div class="episode-thumbnail-container">
+            <img src="${escapeHtml(m.thumbnail_url)}" loading="lazy" onerror="this.src='https://via.placeholder.com/300x169?text=No+Image'">
+          </div>
+          <div class="episode-info">
+            <div class="episode-number">${epsNum ? 'Episode '+epsNum : ''}</div>
+            <p class="episode-title">${escapeHtml(m.title)}</p>
+            <div class="episode-meta">
+              <span>👁️ ${m.views||0}</span>
+              <span>${escapeHtml(m.duration||'')}</span>
+            </div>
           </div>
         </div>
-      </div>`;
+      `;
   }).join('');
 }
 
-function handleEpisodeNavigation(id) {
-  window.location.href = `detail.html?id=${id}`;
-}
-
-// ------------------------
-// RECOMMENDATIONS
-// ------------------------
+// ==========================================
+// REKOMENDASI CERDAS (GENRE + ACAK) - UPDATED
+// ==========================================
 async function loadRecommendations() {
-  if (!currentMovie) return;
-  try {
-    if (recommendList) recommendList.innerHTML = '<div class="loading-recommendations">Memuat rekomendasi...</div>';
-    const { data: randomMovies, error } = await supabase.from("movies").select("*").neq("id", currentMovie.id).limit(40);
-    if (error) throw error;
-    const seriesTitle = extractSeriesTitle(currentMovie?.title);
-    let filteredMovies = randomMovies || [];
-    if (seriesTitle) {
-      filteredMovies = filteredMovies.filter(movie => extractSeriesTitle(movie.title) !== seriesTitle);
-    }
-    const shuffled = shuffleArray(filteredMovies).slice(0, 30);
-    renderRecommendations(shuffled);
-  } catch (err) {
-    console.error('loadRecommendations error', err);
-    if (recommendList) recommendList.innerHTML = '<div class="loading-recommendations">Gagal memuat rekomendasi.</div>';
-  }
-}
-
-function shuffleArray(array) {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-}
-
-function renderRecommendations(movies) {
-  if (!recommendList) return;
-  if (!movies || movies.length === 0) {
-    recommendList.innerHTML = '<div class="loading-recommendations">Tidak ada rekomendasi.</div>';
-    return;
-  }
-  recommendList.innerHTML = movies.map(movie => `
-    <div class="recommend-item" onclick="handleRecommendationNavigation('${movie.id}')">
-      <div class="recommend-thumbnail-container">
-        <img src="${movie.thumbnail_url || 'https://via.placeholder.com/200x355?text=No+Thumbnail'}" alt="${movie.title}" onerror="this.src='https://via.placeholder.com/200x355?text=No+Thumbnail'" loading="lazy">
-      </div>
-      <div class="recommend-info">
-        <p class="recommend-title-text">${escapeHtml(movie.title)}</p>
-        <div class="recommend-meta">
-          <span class="views">👁️ ${movie.views || 0}</span>
-          ${movie.genre ? `<span class="genre">${escapeHtml(movie.genre.split(',')[0])}</span>` : ''}
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function handleRecommendationNavigation(id) {
-  window.location.href = `detail.html?id=${id}`;
-}
-
-// ------------------------
-// UTILITY & UI HELPERS (DIPERBAIKI)
-// ------------------------
-function checkDescriptionLength() {
-  if (!descEl || !toggleDescBtn) return;
-  
-  const lineHeight = parseInt(getComputedStyle(descEl).lineHeight);
-  const maxHeight = lineHeight * 2; // 2 lines
-  
-  if (descEl.scrollHeight > maxHeight) {
-    descEl.classList.add('description-collapsed');
-    toggleDescBtn.classList.remove('hidden');
+    if (!currentMovie) return;
     
-    toggleDescBtn.onclick = () => {
-      if (descEl.classList.contains('description-collapsed')) {
-        descEl.classList.remove('description-collapsed');
-        toggleDescBtn.textContent = 'Sembunyikan';
-      } else {
-        descEl.classList.add('description-collapsed');
-        toggleDescBtn.textContent = 'Selengkapnya';
-      }
-    };
-  } else {
-    toggleDescBtn.classList.add('hidden');
+    const RECOMMENDATION_LIMIT = 12;
+    let finalMovies = [];
+    let existingIds = new Set(); 
+    existingIds.add(currentMovie.id);
+
+    try {
+        // 1. Cari berdasarkan GENRE
+        if (currentMovie.genre) {
+            const mainGenre = currentMovie.genre.split(',')[0].trim();
+            const { data: genreData } = await supabase
+                .from("movies")
+                .select("id, title, thumbnail_url, views, genre")
+                .neq("id", currentMovie.id)
+                .ilike("genre", `%${mainGenre}%`)
+                .limit(RECOMMENDATION_LIMIT);
+
+            if (genreData && genreData.length > 0) {
+                finalMovies = [...genreData];
+                genreData.forEach(m => existingIds.add(m.id));
+            }
+        }
+
+        // 2. Isi sisa dengan FILM ACAK (Fallback)
+        if (finalMovies.length < RECOMMENDATION_LIMIT) {
+            const slotsNeeded = RECOMMENDATION_LIMIT - finalMovies.length;
+            const { data: randomData } = await supabase
+                .from("movies")
+                .select("id, title, thumbnail_url, views, genre")
+                .neq("id", currentMovie.id)
+                .limit(40); 
+
+            if (randomData && randomData.length > 0) {
+                const uniqueRandoms = randomData.filter(m => !existingIds.has(m.id));
+                const shuffled = uniqueRandoms.sort(() => 0.5 - Math.random());
+                const fillers = shuffled.slice(0, slotsNeeded);
+                finalMovies = [...finalMovies, ...fillers];
+            }
+        }
+
+        // 3. Render
+        if (finalMovies.length === 0) {
+            recommendList.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#888;">Belum ada rekomendasi.</div>';
+            return;
+        }
+
+        recommendList.innerHTML = finalMovies.map(m => `
+          <div class="recommend-item" onclick="handleRecommendationNavigation('${m.id}')">
+            <div class="recommend-thumbnail-container">
+              <img src="${escapeHtml(m.thumbnail_url)}" loading="lazy" onerror="this.src='https://via.placeholder.com/200x300?text=No+Image'">
+            </div>
+            <div class="recommend-info">
+              <p class="recommend-title-text">${escapeHtml(m.title)}</p>
+              <div class="recommend-meta">
+                <span>👁️ ${m.views || 0}</span>
+                ${m.genre ? `<span class="genre">${escapeHtml(m.genre.split(',')[0])}</span>` : ''}
+              </div>
+            </div>
+          </div>
+        `).join('');
+
+    } catch (err) {
+        console.error('Recommendation Error:', err);
+        recommendList.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#888;">Gagal memuat rekomendasi.</div>';
+    }
+}
+
+// ------------------------
+// UTILS
+// ------------------------
+function extractSeriesTitle(title) {
+  if (!title) return null;
+  const match = title.match(/(.*?)\s*(?:Episode|Ep|Part|Ch)\s*\d+/i);
+  return match ? match[1].trim() : null;
+}
+
+function extractEpisodeNumber(title) {
+  const match = title.match(/(?:Episode|Ep|Part)\s*(\d+)/i);
+  return match ? match[1] : '';
+}
+
+function checkDescriptionLength() {
+  if (descEl.scrollHeight > descEl.clientHeight) {
+      toggleDescBtn.classList.remove('hidden');
+      toggleDescBtn.onclick = () => {
+          descEl.classList.toggle('description-collapsed');
+          toggleDescBtn.textContent = descEl.classList.contains('description-collapsed') ? 'Selengkapnya' : 'Sembunyikan';
+      };
+      descEl.classList.add('description-collapsed');
   }
 }
 
-function showLoginPopup(action = "melakukan aksi ini") {
-  const popupText = document.querySelector("#login-popup p");
-  if (popupText) popupText.textContent = `Untuk ${action}, silakan login terlebih dahulu.`;
-  if (popup) popup.classList.remove("hidden");
+function showError(msg) {
+    const d = document.createElement('div');
+    d.innerHTML = `<div class="popup-overlay"><div class="popup-box error-popup"><h3>Error</h3><p>${msg}</p><button onclick="this.parentElement.parentElement.remove()" class="popup-ok-btn">OK</button></div></div>`;
+    document.body.appendChild(d.firstChild);
 }
 
-function showLoading(show) {
-  let loadingEl = document.getElementById('loading-overlay');
-  if (!loadingEl && show) {
-    loadingEl = document.createElement('div');
-    loadingEl.id = 'loading-overlay';
-    loadingEl.className = 'loading-overlay';
-    loadingEl.innerHTML = `<div class="loading-spinner"></div><p>Memuat...</p>`;
-    document.body.appendChild(loadingEl);
-  } else if (loadingEl && !show) {
-    loadingEl.remove();
-  }
+// Update View Count Logic
+async function updateViewCount() {
+    if (hasIncrementedViews || !currentMovie) return;
+    hasIncrementedViews = true;
+    const viewKey = `viewed_${currentMovie.id}`;
+    if (sessionStorage.getItem(viewKey)) return;
+
+    await supabase.rpc('increment_views', { movie_id: currentMovie.id });
+    sessionStorage.setItem(viewKey, '1');
 }
 
-function showError(message) {
-  const errorEl = document.createElement('div');
-  errorEl.className = 'error-popup popup-overlay';
-  errorEl.innerHTML = `
-    <div class="popup-box error-popup">
-      <div class="popup-icon">❌</div>
-      <h3>Error</h3>
-      <p>${message}</p>
-      <button class="popup-ok-btn" onclick="this.parentElement.parentElement.remove()">OK</button>
-    </div>`;
-  document.body.appendChild(errorEl);
+// Like & Fav Logic Simpel
+async function checkLikeStatus() {
+    if (!currentUser) return;
+    const { data } = await supabase.from("likes").select("id").match({movie_id: currentMovie.id, user_id: currentUser.id});
+    if (likeBtn) data && data.length ? likeBtn.classList.add("liked") : likeBtn.classList.remove("liked");
+}
+async function checkFavoriteStatus() {
+    if (!currentUser) return;
+    const { data } = await supabase.from("favorites").select("id").match({movie_id: currentMovie.id, user_id: currentUser.id});
+    if (favBtn) data && data.length ? favBtn.classList.add("favorited") : favBtn.classList.remove("favorited");
 }
 
-function showSuccessPopup(message) {
-  const successEl = document.createElement('div');
-  successEl.className = 'success-popup popup-overlay';
-  successEl.innerHTML = `
-    <div class="popup-box success-popup">
-      <div class="popup-icon">✅</div>
-      <h3>Sukses</h3>
-      <p>${message}</p>
-      <button class="popup-ok-btn" onclick="this.parentElement.parentElement.remove()">OK</button>
-    </div>`;
-  document.body.appendChild(successEl);
-  setTimeout(() => { if (successEl.parentElement) successEl.remove(); }, 3000);
+async function handleLike() {
+    if (!currentUser) return popup.classList.remove("hidden");
+    const isLiked = likeBtn.classList.contains("liked");
+    if (isLiked) {
+        await supabase.from("likes").delete().match({movie_id: currentMovie.id, user_id: currentUser.id});
+        likeBtn.classList.remove("liked");
+    } else {
+        await supabase.from("likes").insert({movie_id: currentMovie.id, user_id: currentUser.id});
+        likeBtn.classList.add("liked");
+    }
+}
+async function handleFavorite() {
+    if (!currentUser) return popup.classList.remove("hidden");
+    const isFav = favBtn.classList.contains("favorited");
+    if (isFav) {
+        await supabase.from("favorites").delete().match({movie_id: currentMovie.id, user_id: currentUser.id});
+        favBtn.classList.remove("favorited");
+    } else {
+        await supabase.from("favorites").insert({movie_id: currentMovie.id, user_id: currentUser.id});
+        favBtn.classList.add("favorited");
+    }
+}
+function handleShare() {
+    const data = { title: currentMovie.title, url: window.location.href };
+    if (navigator.share) navigator.share(data);
+    else {
+        navigator.clipboard.writeText(data.url);
+        alert('Link disalin!');
+    }
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function formatTimeAgo(dateString) {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffMins < 1) return 'baru saja';
-  if (diffMins < 60) return `${diffMins} menit lalu`;
-  if (diffHours < 24) return `${diffHours} jam lalu`;
-  if (diffDays < 7) return `${diffDays} hari lalu`;
-  return date.toLocaleDateString('id-ID');
-}
-
-// Expose global untuk inline onclick handlers
-window.handleVideoError = handleVideoError;
-window.handleEpisodeNavigation = handleEpisodeNavigation;
-window.handleRecommendationNavigation = handleRecommendationNavigation;
-
-// End of detail.js
+// Global Expose
+window.handleEpisodeNavigation = (id) => window.location.href = `detail.html?id=${id}`;
+window.handleRecommendationNavigation = (id) => window.location.href = `detail.html?id=${id}`;
+window.stopAdAndResume = stopAdAndResume;
